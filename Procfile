@@ -1,1 +1,1 @@
-worker: python picks_elite_bot.py
+web: python picks_elite_bot.py
