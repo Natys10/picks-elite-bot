@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 #   PICKS ELITE BOT - @PicksEliteProBot
 # =============================================
 
-TOKEN       = "8915840915:AAEN1o7abYvMw6r11XEbY7eFxmTw-ccX3Q4"
+TOKEN       = "8915840915:AAFWX7lh3wxO3QKWutoCMdYB7l-TcJ5aQJQ"
 CANAL_ID    = "@PicksElitePro"
 CANAL_GRATIS = "https://t.me/PicksElitePro"
 ADMIN_ID    = 8516113803   # Solo el admin puede publicar picks
