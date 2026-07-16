@@ -188,12 +188,22 @@ async def post_init(application: Application):
         BotCommand("start", "Abrir menu principal"),
     ])
 
+# ——— COMANDO /id (para obtener tu ID de Telegram) ———
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    nombre = update.effective_user.first_name
+    await update.message.reply_text(
+        f"Tu ID de Telegram es:\n\n`{user_id}`\n\nHola {nombre}, copia ese número y mándalo al desarrollador.",
+        parse_mode="Markdown"
+    )
+
 # ——— INICIAR BOT ———
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     # Comando
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("id",    get_id))
 
     # Botones — patrones exactos
     app.add_handler(CallbackQueryHandler(canal_gratis, pattern="^canal_gratis$"))
@@ -208,3 +218,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
