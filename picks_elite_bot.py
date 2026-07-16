@@ -215,17 +215,23 @@ def es_admin(update: Update) -> bool:
 
 # ——— /pick partido | apuesta | cuota | liga | hora ———
 async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not es_admin(update):
-        await update.message.reply_text("No tienes permiso para usar este comando.")
-        return
+    # Respuesta inmediata para confirmar que el bot recibió el mensaje
+    await update.message.reply_text("🔄 Procesando tu apuesta...")
+
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    print(f"[DEBUG] Comando /pick recibido de user_id={user_id} (@{username})")
 
     try:
         args = " ".join(context.args).split("|")
+        print(f"[DEBUG] Argumentos recibidos: {args}")
         partido  = args[0].strip()
         apuesta  = args[1].strip()
         cuota    = args[2].strip()
         liga     = args[3].strip() if len(args) > 3 else "Fútbol"
         hora     = args[4].strip() if len(args) > 4 else "Hoy"
+
+
 
         mensaje = (
             f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
@@ -259,15 +265,20 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ——— /win partido | apuesta | cuota ———
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    print(f"[DEBUG] Comando /win recibido de user_id={user_id}")
     if not es_admin(update):
+        print(f"[DEBUG] Acceso denegado: user_id={user_id} no es ADMIN_ID={ADMIN_ID}")
         await update.message.reply_text("No tienes permiso para usar este comando.")
         return
 
     try:
         args = " ".join(context.args).split("|")
+        print(f"[DEBUG] Argumentos recibidos: {args}")
         partido = args[0].strip()
         apuesta = args[1].strip()
         cuota   = args[2].strip() if len(args) > 2 else ""
+
 
         cuota_linea = f"📈 *Cuota cobrada:* {cuota}\n" if cuota else ""
         mensaje = (
