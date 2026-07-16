@@ -5,8 +5,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 #   PICKS ELITE BOT - @PicksEliteProBot
 # =============================================
 
-TOKEN = "8915840915:AAEN1o7abYvMw6r11XEbY7eFxmTw-ccX3Q4"
+TOKEN       = "8915840915:AAEN1o7abYvMw6r11XEbY7eFxmTw-ccX3Q4"
+CANAL_ID    = "@PicksElitePro"
 CANAL_GRATIS = "https://t.me/PicksElitePro"
+ADMIN_ID    = 8516113803   # Solo el admin puede publicar picks
 
 # ——— TEXTO BIENVENIDA ———
 BIENVENIDA = """
@@ -181,29 +183,202 @@ async def inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=menu_principal()
         )
 
-# ——— CONFIGURACIÓN INICIAL DEL BOT ———
-async def post_init(application: Application):
-    # Configura el comando /start para que aparezca en el menú del bot
-    await application.bot.set_my_commands([
-        BotCommand("start", "Abrir menu principal"),
-    ])
+# =============================================
+#   COMANDOS DE PUBLICACIÓN (solo admin)
+# =============================================
 
-# ——— COMANDO /id (para obtener tu ID de Telegram) ———
+def es_admin(update: Update) -> bool:
+    return update.effective_user.id == ADMIN_ID
+
+# ——— /pick partido | apuesta | cuota | liga | hora ———
+async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_admin(update):
+        await update.message.reply_text("No tienes permiso para usar este comando.")
+        return
+
+    try:
+        args = " ".join(context.args).split("|")
+        partido  = args[0].strip()
+        apuesta  = args[1].strip()
+        cuota    = args[2].strip()
+        liga     = args[3].strip() if len(args) > 3 else "Fútbol"
+        hora     = args[4].strip() if len(args) > 4 else "Hoy"
+
+        mensaje = f"""
+🔥 *PICK GRATUITO — PICKS ÉLITE* 🔥
+
+⚽ *{partido}*
+🏆 {liga}
+⏰ {hora}
+
+━━━━━━━━━━━━━━━━━━━
+📌 *Apuesta:* {apuesta}
+📊 *Cuota:* {cuota}
+💰 *Stake:* 2/10 unidades
+━━━━━━━━━━━━━━━━━━━
+
+🎯 Selección validada por nuestro equipo analítico.
+
+⚠️ _Apostar implica riesgos. Solo mayores de 18 años._
+"""
+        teclado = [
+            [InlineKeyboardButton("💎 Acceder al Canal VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("📢 Canal Gratuito", url=CANAL_GRATIS)],
+        ]
+        await context.bot.send_message(
+            chat_id=CANAL_ID,
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(teclado)
+        )
+        await update.message.reply_text("✅ Pick publicado en el canal!")
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"Error al publicar. Usa el formato correcto:\n\n"
+            f"`/pick partido | apuesta | cuota | liga | hora`\n\n"
+            f"Ejemplo:\n`/pick Real Madrid vs Barcelona | +2.5 goles | 1.85 | LaLiga | 20:00h`",
+            parse_mode="Markdown"
+        )
+
+# ——— /win partido | apuesta | cuota ———
+async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_admin(update):
+        await update.message.reply_text("No tienes permiso para usar este comando.")
+        return
+
+    try:
+        args = " ".join(context.args).split("|")
+        partido = args[0].strip()
+        apuesta = args[1].strip()
+        cuota   = args[2].strip() if len(args) > 2 else ""
+
+        mensaje = f"""
+✅ *RESULTADO: VERDE* 🟢
+
+⚽ *{partido}*
+📌 {apuesta} ✅
+{f'📊 Cuota: {cuota}' if cuota else ''}
+
+💰 *¡Pick ganador para Picks Élite!*
+📈 Seguimos sumando unidades.
+
+👇 No te pierdas el próximo pick:
+"""
+        teclado = [
+            [InlineKeyboardButton("🔔 Activar notificaciones", url=CANAL_GRATIS)],
+            [InlineKeyboardButton("💎 Canal VIP", url="https://t.me/PicksEliteProBot")],
+        ]
+        await context.bot.send_message(
+            chat_id=CANAL_ID,
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(teclado)
+        )
+        await update.message.reply_text("✅ Resultado WIN publicado!")
+
+    except Exception as e:
+        await update.message.reply_text(
+            "Formato: `/win partido | apuesta | cuota`",
+            parse_mode="Markdown"
+        )
+
+# ——— /loss partido | apuesta | cuota ———
+async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_admin(update):
+        await update.message.reply_text("No tienes permiso para usar este comando.")
+        return
+
+    try:
+        args = " ".join(context.args).split("|")
+        partido = args[0].strip()
+        apuesta = args[1].strip()
+        cuota   = args[2].strip() if len(args) > 2 else ""
+
+        mensaje = f"""
+❌ *RESULTADO: ROJO* 🔴
+
+⚽ *{partido}*
+📌 {apuesta} ❌
+{f'📊 Cuota: {cuota}' if cuota else ''}
+
+📊 Transparencia total. Esto también pasa.
+💪 *La racha positiva continúa. Seguimos.*
+
+Gestiona tu bankroll con responsabilidad 👇
+"""
+        teclado = [
+            [InlineKeyboardButton("📊 Ver historial completo", url=CANAL_GRATIS)],
+            [InlineKeyboardButton("💎 Canal VIP", url="https://t.me/PicksEliteProBot")],
+        ]
+        await context.bot.send_message(
+            chat_id=CANAL_ID,
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(teclado)
+        )
+        await update.message.reply_text("✅ Resultado LOSS publicado!")
+
+    except Exception as e:
+        await update.message.reply_text(
+            "Formato: `/loss partido | apuesta | cuota`",
+            parse_mode="Markdown"
+        )
+
+# ——— /aviso mensaje ———
+async def publicar_aviso(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_admin(update):
+        await update.message.reply_text("No tienes permiso para usar este comando.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Uso: `/aviso tu mensaje aquí`", parse_mode="Markdown")
+        return
+
+    mensaje = " ".join(context.args)
+    teclado = [
+        [InlineKeyboardButton("📢 Canal Gratuito", url=CANAL_GRATIS)],
+    ]
+    await context.bot.send_message(
+        chat_id=CANAL_ID,
+        text=f"📢 *AVISO — PICKS ÉLITE*\n\n{mensaje}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(teclado)
+    )
+    await update.message.reply_text("✅ Aviso publicado en el canal!")
+
+# ——— /id (obtener tu ID de Telegram) ———
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    nombre = update.effective_user.first_name
+    nombre  = update.effective_user.first_name
     await update.message.reply_text(
-        f"Tu ID de Telegram es:\n\n`{user_id}`\n\nHola {nombre}, copia ese número y mándalo al desarrollador.",
+        f"Tu ID de Telegram es:\n\n`{user_id}`\n\nHola {nombre}!",
         parse_mode="Markdown"
     )
+
+# ——— CONFIGURACIÓN INICIAL DEL BOT ———
+async def post_init(application: Application):
+    await application.bot.set_my_commands([
+        BotCommand("start", "Abrir menu principal"),
+        BotCommand("pick",  "Publicar pick en el canal (admin)"),
+        BotCommand("win",   "Publicar resultado ganado (admin)"),
+        BotCommand("loss",  "Publicar resultado perdido (admin)"),
+        BotCommand("aviso", "Publicar aviso en el canal (admin)"),
+    ])
 
 # ——— INICIAR BOT ———
 def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
-    # Comando
+    # Comandos públicos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id",    get_id))
+
+    # Comandos de admin
+    app.add_handler(CommandHandler("pick",  publicar_pick))
+    app.add_handler(CommandHandler("win",   publicar_win))
+    app.add_handler(CommandHandler("loss",  publicar_loss))
+    app.add_handler(CommandHandler("aviso", publicar_aviso))
 
     # Botones — patrones exactos
     app.add_handler(CallbackQueryHandler(canal_gratis, pattern="^canal_gratis$"))
@@ -218,4 +393,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
