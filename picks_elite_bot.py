@@ -247,14 +247,15 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("Pick publicado en el canal!")
+        await update.message.reply_text("✅ Pick publicado en el canal!")
 
-    except Exception:
+    except Exception as e:
         await update.message.reply_text(
-            "Formato:\n`/pick partido | apuesta | cuota | liga | hora`\n\n"
-            "Ejemplo:\n`/pick Real Madrid vs Barcelona | +2.5 goles | 1.85 | LaLiga | 20:00h`",
-            parse_mode="Markdown"
+            f"❌ Error al publicar: {str(e)}\n\n"
+            f"Asegúrate de usar el formato correcto:\n"
+            f"`/pick partido | apuesta | cuota | liga | hora`"
         )
+
 
 # ——— /win partido | apuesta | cuota ———
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -286,13 +287,10 @@ async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("Resultado WIN publicado!")
+        await update.message.reply_text("✅ Resultado WIN publicado!")
 
-    except Exception:
-        await update.message.reply_text(
-            "Formato: `/win partido | apuesta | cuota`",
-            parse_mode="Markdown"
-        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al publicar win: {str(e)}")
 
 # ——— /loss partido | apuesta | cuota ———
 async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,13 +323,11 @@ async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("Resultado LOSS publicado!")
+        await update.message.reply_text("✅ Resultado LOSS publicado!")
 
-    except Exception:
-        await update.message.reply_text(
-            "Formato: `/loss partido | apuesta | cuota`",
-            parse_mode="Markdown"
-        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al publicar loss: {str(e)}")
+
 
 # ——— /aviso mensaje ———
 async def publicar_aviso(update: Update, context: ContextTypes.DEFAULT_TYPE):
