@@ -366,13 +366,12 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ——— CONFIGURACIÓN INICIAL DEL BOT ———
 async def post_init(application: Application):
+    # Solo registramos /start en el menú para que la interfaz quede limpia para los usuarios.
+    # Los comandos de admin (/pick, /win, etc.) se pueden escribir pero no se mostrarán en la lista.
     await application.bot.set_my_commands([
-        BotCommand("start", "Abrir menu principal"),
-        BotCommand("pick",  "Publicar pick en el canal (admin)"),
-        BotCommand("win",   "Publicar resultado ganado (admin)"),
-        BotCommand("loss",  "Publicar resultado perdido (admin)"),
-        BotCommand("aviso", "Publicar aviso en el canal (admin)"),
+        BotCommand("start", "Abrir menú principal"),
     ])
+
 
 # ——— INICIAR BOT ———
 def main():
