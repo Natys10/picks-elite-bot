@@ -1,3 +1,6 @@
+import os
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -9,6 +12,26 @@ TOKEN       = "8915840915:AAEN1o7abYvMw6r11XEbY7eFxmTw-ccX3Q4"
 CANAL_ID    = "@PicksElitePro"
 CANAL_GRATIS = "https://t.me/PicksElitePro"
 ADMIN_ID    = 8516113803   # Solo el admin puede publicar picks
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server_address = ("", port)
+    class HealthCheckHandler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, format, *args):
+            pass
+
+    try:
+        httpd = HTTPServer(server_address, HealthCheckHandler)
+        print(f"[OK] Servidor de salud iniciado en puerto {port}")
+        httpd.serve_forever()
+    except Exception as e:
+        print(f"[ERROR] No se pudo iniciar el servidor de salud: {e}")
+
 
 # ——— TEXTO BIENVENIDA ———
 BIENVENIDA = """
@@ -154,7 +177,7 @@ Canal de pronósticos de fútbol con enfoque *100% estadístico y analítico*.
 📌 Canal gratuito: @PicksElitePro
 💎 Canal VIP: Solo para suscriptores
 
-⚠️ _Apostar implica riesgos. Solo mayores de 18 años._
+
 """
     teclado = [
         [InlineKeyboardButton("📢 Unirse gratis", url=CANAL_GRATIS)],
@@ -204,26 +227,19 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         liga     = args[3].strip() if len(args) > 3 else "Fútbol"
         hora     = args[4].strip() if len(args) > 4 else "Hoy"
 
-        mensaje = f"""
-🔥 *PICK GRATUITO — PICKS ÉLITE* 🔥
-
-⚽ *{partido}*
-🏆 {liga}
-⏰ {hora}
-
-━━━━━━━━━━━━━━━━━━━
-📌 *Apuesta:* {apuesta}
-📊 *Cuota:* {cuota}
-💰 *Stake:* 2/10 unidades
-━━━━━━━━━━━━━━━━━━━
-
-🎯 Selección validada por nuestro equipo analítico.
-
-⚠️ _Apostar implica riesgos. Solo mayores de 18 años._
-"""
+        mensaje = (
+            f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
+            f"⚽️ *Evento:* {partido}\n"
+            f"🏆 *Liga:* {liga}\n"
+            f"⏰ *Hora:* {hora}\n\n"
+            f"🎯 *Pronóstico:* {apuesta}\n"
+            f"📈 *Cuota:* {cuota}\n"
+            f"💰 *Stake recomendado:* 2/10 (Stake 2)\n\n"
+            f"⚡️ _Realiza tu apuesta ahora antes de que la cuota empiece a bajar. ¡Vamos con todo!_"
+        )
         teclado = [
-            [InlineKeyboardButton("💎 Acceder al Canal VIP", url="https://t.me/PicksEliteProBot")],
-            [InlineKeyboardButton("📢 Canal Gratuito", url=CANAL_GRATIS)],
+            [InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("💬 SOPORTE / CONTACTO", url=CANAL_GRATIS)],
         ]
         await context.bot.send_message(
             chat_id=CANAL_ID,
@@ -231,13 +247,12 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Pick publicado en el canal!")
+        await update.message.reply_text("Pick publicado en el canal!")
 
-    except Exception as e:
+    except Exception:
         await update.message.reply_text(
-            f"Error al publicar. Usa el formato correcto:\n\n"
-            f"`/pick partido | apuesta | cuota | liga | hora`\n\n"
-            f"Ejemplo:\n`/pick Real Madrid vs Barcelona | +2.5 goles | 1.85 | LaLiga | 20:00h`",
+            "Formato:\n`/pick partido | apuesta | cuota | liga | hora`\n\n"
+            "Ejemplo:\n`/pick Real Madrid vs Barcelona | +2.5 goles | 1.85 | LaLiga | 20:00h`",
             parse_mode="Markdown"
         )
 
@@ -253,21 +268,17 @@ async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
         apuesta = args[1].strip()
         cuota   = args[2].strip() if len(args) > 2 else ""
 
-        mensaje = f"""
-✅ *RESULTADO: VERDE* 🟢
-
-⚽ *{partido}*
-📌 {apuesta} ✅
-{f'📊 Cuota: {cuota}' if cuota else ''}
-
-💰 *¡Pick ganador para Picks Élite!*
-📈 Seguimos sumando unidades.
-
-👇 No te pierdas el próximo pick:
-"""
+        cuota_linea = f"📈 *Cuota cobrada:* {cuota}\n" if cuota else ""
+        mensaje = (
+            f"🟢 *¡¡BOOOOOOOOM VERDE DE PICKS ÉLITE!!* 🟢\n\n"
+            f"⚽️ *Evento:* {partido}\n"
+            f"🎯 *Pronóstico:* {apuesta} ✅\n"
+            f"{cuota_linea}\n"
+            f"¡Cobramos otra apuesta gratuita de forma espectacular! La racha sigue intacta. ¡Felicidades a todos los que nos siguieron! 💰🔥\n\n"
+            f"🚀 _Si no quieres perderte ningún pick gratuito, recuerda activar las notificaciones de este canal._"
+        )
         teclado = [
-            [InlineKeyboardButton("🔔 Activar notificaciones", url=CANAL_GRATIS)],
-            [InlineKeyboardButton("💎 Canal VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("💎 QUIERO SUSCRIBIRME AL VIP", url="https://t.me/PicksEliteProBot")],
         ]
         await context.bot.send_message(
             chat_id=CANAL_ID,
@@ -275,9 +286,9 @@ async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Resultado WIN publicado!")
+        await update.message.reply_text("Resultado WIN publicado!")
 
-    except Exception as e:
+    except Exception:
         await update.message.reply_text(
             "Formato: `/win partido | apuesta | cuota`",
             parse_mode="Markdown"
@@ -295,21 +306,18 @@ async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
         apuesta = args[1].strip()
         cuota   = args[2].strip() if len(args) > 2 else ""
 
-        mensaje = f"""
-❌ *RESULTADO: ROJO* 🔴
-
-⚽ *{partido}*
-📌 {apuesta} ❌
-{f'📊 Cuota: {cuota}' if cuota else ''}
-
-📊 Transparencia total. Esto también pasa.
-💪 *La racha positiva continúa. Seguimos.*
-
-Gestiona tu bankroll con responsabilidad 👇
-"""
+        cuota_linea = f"📈 *Cuota:* {cuota}\n" if cuota else ""
+        mensaje = (
+            f"🔴 *ROJO EN ESTE PICK* 🔴\n\n"
+            f"⚽️ *Evento:* {partido}\n"
+            f"🎯 *Pronóstico:* {apuesta} ❌\n"
+            f"{cuota_linea}\n"
+            f"Hoy no nos acompañó la suerte en este partido. Transparencia total como siempre. Recordad que la clave del éxito en las apuestas deportivas es la gestión estricta del bankroll a largo plazo.\n\n"
+            f"💪 _Seguimos analizando para traeros el próximo verde muy pronto. ¡Cabeza fría y a por la siguiente!_"
+        )
         teclado = [
-            [InlineKeyboardButton("📊 Ver historial completo", url=CANAL_GRATIS)],
-            [InlineKeyboardButton("💎 Canal VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("📊 VER HISTORIAL COMPLETO", url=CANAL_GRATIS)],
+            [InlineKeyboardButton("💎 CANAL VIP", url="https://t.me/PicksEliteProBot")],
         ]
         await context.bot.send_message(
             chat_id=CANAL_ID,
@@ -317,9 +325,9 @@ Gestiona tu bankroll con responsabilidad 👇
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Resultado LOSS publicado!")
+        await update.message.reply_text("Resultado LOSS publicado!")
 
-    except Exception as e:
+    except Exception:
         await update.message.reply_text(
             "Formato: `/loss partido | apuesta | cuota`",
             parse_mode="Markdown"
@@ -368,6 +376,9 @@ async def post_init(application: Application):
 
 # ——— INICIAR BOT ———
 def main():
+    # Iniciar servidor de salud en segundo plano para Railway
+    threading.Thread(target=run_health_check_server, daemon=True).start()
+
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     # Comandos públicos
@@ -393,3 +404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
