@@ -2,12 +2,13 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # =============================================
-#   PICKS ÉLITE BOT - @PicksEliteProBot
+#   PICKS ELITE BOT - @PicksEliteProBot
 # =============================================
 
 TOKEN = "8915840915:AAEN1o7abYvMw6r11XEbY7eFxmTw-ccX3Q4"
 CANAL_GRATIS = "https://t.me/PicksElitePro"
 
+# ——— TEXTO BIENVENIDA ———
 BIENVENIDA = """
 👑 *¡Bienvenido a Picks Élite!*
 
@@ -26,6 +27,7 @@ Aquí encontrarás:
 👇 Selecciona una opción para comenzar.
 """
 
+# ——— MENÚ PRINCIPAL (reutilizable) ———
 def menu_principal():
     teclado = [
         [InlineKeyboardButton("⚽ Canal Gratuito", url=CANAL_GRATIS)],
@@ -66,10 +68,13 @@ Para suscribirte contáctanos directamente 👇
 """
     teclado = [
         [InlineKeyboardButton("✉️ Contactar para VIP", url=CANAL_GRATIS)],
-        [InlineKeyboardButton("🔙 Volver al menú", callback_data="inicio")],
+        [InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")],
     ]
-    await query.edit_message_text(texto, parse_mode="Markdown",
-                                  reply_markup=InlineKeyboardMarkup(teclado))
+    await query.edit_message_text(
+        texto,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(teclado)
+    )
 
 # ——— BOTÓN RESULTADOS ———
 async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,10 +96,13 @@ Síguenos en el canal para ver los picks en tiempo real 👇
 """
     teclado = [
         [InlineKeyboardButton("📢 Ver canal gratuito", url=CANAL_GRATIS)],
-        [InlineKeyboardButton("🔙 Volver al menú", callback_data="inicio")],
+        [InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")],
     ]
-    await query.edit_message_text(texto, parse_mode="Markdown",
-                                  reply_markup=InlineKeyboardMarkup(teclado))
+    await query.edit_message_text(
+        texto,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(teclado)
+    )
 
 # ——— BOTÓN ABOUT ———
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,26 +126,44 @@ Canal de pronósticos de fútbol con enfoque *100% estadístico y analítico*.
 """
     teclado = [
         [InlineKeyboardButton("📢 Unirse gratis", url=CANAL_GRATIS)],
-        [InlineKeyboardButton("🔙 Volver al menú", callback_data="inicio")],
+        [InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")],
     ]
-    await query.edit_message_text(texto, parse_mode="Markdown",
-                                  reply_markup=InlineKeyboardMarkup(teclado))
+    await query.edit_message_text(
+        texto,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(teclado)
+    )
 
-# ——— VOLVER AL INICIO ———
+# ——— VOLVER AL MENÚ PRINCIPAL (reutiliza menu_principal y BIENVENIDA) ———
 async def inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(BIENVENIDA, parse_mode="Markdown",
-                                  reply_markup=menu_principal())
+    try:
+        await query.edit_message_text(
+            BIENVENIDA,
+            parse_mode="Markdown",
+            reply_markup=menu_principal()
+        )
+    except Exception:
+        # Si no se puede editar, envía un mensaje nuevo
+        await query.message.reply_text(
+            BIENVENIDA,
+            parse_mode="Markdown",
+            reply_markup=menu_principal()
+        )
 
 # ——— INICIAR BOT ———
 def main():
     app = Application.builder().token(TOKEN).build()
+
+    # Comando
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(vip, pattern="vip"))
-    app.add_handler(CallbackQueryHandler(resultados, pattern="resultados"))
-    app.add_handler(CallbackQueryHandler(about, pattern="about"))
-    app.add_handler(CallbackQueryHandler(inicio, pattern="inicio"))
+
+    # Botones — patrones exactos para evitar conflictos
+    app.add_handler(CallbackQueryHandler(vip,        pattern="^vip$"))
+    app.add_handler(CallbackQueryHandler(resultados, pattern="^resultados$"))
+    app.add_handler(CallbackQueryHandler(about,      pattern="^about$"))
+    app.add_handler(CallbackQueryHandler(inicio,     pattern="^inicio$"))
 
     print("[OK] Picks Elite Bot arrancado correctamente...")
     print("[OK] @PicksEliteProBot esta activo - esperando mensajes...")
