@@ -91,10 +91,10 @@ def run_health_check():
 # --- MENU ---
 def menu_principal():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Canal Gratuito", callback_data="canal_gratis")],
-        [InlineKeyboardButton("Canal VIP",      callback_data="vip")],
-        [InlineKeyboardButton("Resultados",     callback_data="resultados")],
-        [InlineKeyboardButton("Sobre nosotros", callback_data="about")],
+        [InlineKeyboardButton("⚽ Canal Gratuito", url=LINK_GRATUITO)],
+        [InlineKeyboardButton("💎 Canal VIP",      callback_data="vip")],
+        [InlineKeyboardButton("📊 Resultados",     callback_data="resultados")],
+        [InlineKeyboardButton("ℹ️ Sobre nosotros", callback_data="about")],
     ])
 
 def btn_volver():
