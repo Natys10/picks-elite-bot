@@ -1,21 +1,36 @@
 import os
+import logging
+import asyncio
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# ——— Módulos propios ———
+from config import TOKEN, ADMIN_ID, CANAL_ID, LINK_CANAL_GRATUITO, LINK_CANAL_VIP
+from database import Database
+from marketing import MarketingFunnel
+
 # =============================================
-#   PICKS ELITE BOT - @PicksEliteProBot
+#   PICKS ELITE BOT — @PicksEliteProBot
+#   Versión con embudo de conversión (Fase 1)
 # =============================================
 
-TOKEN       = "8915840915:AAFWX7lh3wxO3QKWutoCMdYB7l-TcJ5aQJQ"
-CANAL_ID    = "@PicksElitePro"
-CANAL_GRATIS = "https://t.me/PicksElitePro"
-ADMIN_ID    = 8516113803   # Solo el admin puede publicar picks
+# ——— Logging ———
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
+# ——— Inicializar base de datos y módulo de marketing ———
+db      = Database()
+funnel  = MarketingFunnel(db)
+
+# ——— Servidor de salud para Railway ———
 def run_health_check_server():
     port = int(os.environ.get("PORT", 8080))
-    server_address = ("", port)
     class HealthCheckHandler(SimpleHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
@@ -23,17 +38,19 @@ def run_health_check_server():
             self.end_headers()
             self.wfile.write(b"OK")
         def log_message(self, format, *args):
-            pass
-
+            pass  # Silenciar logs del servidor HTTP
     try:
-        httpd = HTTPServer(server_address, HealthCheckHandler)
-        print(f"[OK] Servidor de salud iniciado en puerto {port}")
+        httpd = HTTPServer(("", port), HealthCheckHandler)
+        logger.info(f"[OK] Servidor de salud iniciado en puerto {port}")
         httpd.serve_forever()
     except Exception as e:
-        print(f"[ERROR] No se pudo iniciar el servidor de salud: {e}")
+        logger.error(f"[ERROR] Servidor de salud no pudo iniciarse: {e}")
 
 
-# ——— TEXTO BIENVENIDA ———
+# =============================================
+#   TEXTOS
+# =============================================
+
 BIENVENIDA = """
 👑 *¡Bienvenido a Picks Élite!*
 
@@ -52,21 +69,31 @@ Aquí encontrarás:
 👇 Selecciona una opción para comenzar.
 """
 
-# ——— MENÚ PRINCIPAL (reutilizable) ———
+
+# =============================================
+#   UTILIDADES
+# =============================================
+
 def menu_principal():
     teclado = [
-        [InlineKeyboardButton("⚽ Canal Gratuito", callback_data="canal_gratis")],
-        [InlineKeyboardButton("💎 Canal VIP",      callback_data="vip")],
-        [InlineKeyboardButton("📊 Resultados",     callback_data="resultados")],
-        [InlineKeyboardButton("ℹ️ Sobre Picks Elite", callback_data="about")],
+        [InlineKeyboardButton("⚽ Canal Gratuito",     callback_data="canal_gratis")],
+        [InlineKeyboardButton("💎 Canal VIP",          callback_data="vip")],
+        [InlineKeyboardButton("📊 Resultados",         callback_data="resultados")],
+        [InlineKeyboardButton("ℹ️ Sobre Picks Elite",  callback_data="about")],
     ]
     return InlineKeyboardMarkup(teclado)
 
-# ——— BOTÓN VOLVER (reutilizable) ———
 def boton_volver():
     return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")]]
 
-# ——— COMANDO /start ———
+def es_admin(update: Update) -> bool:
+    return update.effective_user.id == ADMIN_ID
+
+
+# =============================================
+#   COMANDOS PÚBLICOS
+# =============================================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         BIENVENIDA,
@@ -74,33 +101,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=menu_principal()
     )
 
-# ——— SECCIÓN CANAL GRATUITO ———
-async def canal_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    texto = """
-⚽ *Canal Gratuito — Picks Élite*
-
-Publicamos picks gratuitos cada día con análisis estadístico real.
-
-✅ Picks diarios con cuota incluida
-📊 Historial 100% transparente
-🎯 Análisis antes de cada partido
-📈 Actualizado en tiempo real
-
-👇 Entra ahora al canal:
-"""
-    teclado = [
-        [InlineKeyboardButton("📢 Entrar al canal", url=CANAL_GRATIS)],
-        *boton_volver()
-    ]
-    await query.edit_message_text(
-        texto,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(teclado)
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    nombre  = update.effective_user.first_name
+    await update.message.reply_text(
+        f"Tu ID de Telegram es:\n\n`{user_id}`\n\nHola {nombre}!",
+        parse_mode="Markdown"
     )
 
-# ——— SECCIÓN VIP ———
+
+# =============================================
+#   SECCIONES DEL MENÚ (Callback Queries)
+# =============================================
+
+async def canal_gratis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Cuando el usuario pulsa 'Canal Gratuito':
+    1. Registra al usuario en la base de datos.
+    2. Muestra el mensaje de bienvenida del embudo.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    user = query.from_user
+    # Paso 1 — Registrar en el embudo
+    funnel.registrar_entrada(user.id, user.username, user.first_name)
+
+    # Paso 2 — Mostrar mensaje de bienvenida
+    await funnel.enviar_bienvenida_canal_gratis(context.bot, query)
+
+
 async def vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -122,16 +152,12 @@ _Cancela cuando quieras_
 Para suscribirte contáctanos directamente 👇
 """
     teclado = [
-        [InlineKeyboardButton("✉️ Contactar para VIP", url=CANAL_GRATIS)],
+        [InlineKeyboardButton("✉️ Contactar para VIP", url=LINK_CANAL_VIP)],
         *boton_volver()
     ]
-    await query.edit_message_text(
-        texto,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(teclado)
-    )
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
-# ——— SECCIÓN RESULTADOS ———
+
 async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -150,16 +176,12 @@ _¡Los resultados se actualizarán cada día!_
 Síguenos en el canal para ver los picks en tiempo real 👇
 """
     teclado = [
-        [InlineKeyboardButton("📢 Ver canal gratuito", url=CANAL_GRATIS)],
+        [InlineKeyboardButton("📢 Ver canal gratuito", url=LINK_CANAL_GRATUITO)],
         *boton_volver()
     ]
-    await query.edit_message_text(
-        texto,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(teclado)
-    )
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
-# ——— SECCIÓN ABOUT ———
+
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -176,62 +198,48 @@ Canal de pronósticos de fútbol con enfoque *100% estadístico y analítico*.
 
 📌 Canal gratuito: @PicksElitePro
 💎 Canal VIP: Solo para suscriptores
-
-
 """
     teclado = [
-        [InlineKeyboardButton("📢 Unirse gratis", url=CANAL_GRATIS)],
+        [InlineKeyboardButton("📢 Unirse gratis", url=LINK_CANAL_GRATUITO)],
         *boton_volver()
     ]
-    await query.edit_message_text(
-        texto,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(teclado)
-    )
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
-# ——— VOLVER AL MENÚ PRINCIPAL ———
+
 async def inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     try:
-        await query.edit_message_text(
-            BIENVENIDA,
-            parse_mode="Markdown",
-            reply_markup=menu_principal()
-        )
+        await query.edit_message_text(BIENVENIDA, parse_mode="Markdown", reply_markup=menu_principal())
     except Exception:
-        await query.message.reply_text(
-            BIENVENIDA,
-            parse_mode="Markdown",
-            reply_markup=menu_principal()
-        )
+        await query.message.reply_text(BIENVENIDA, parse_mode="Markdown", reply_markup=menu_principal())
+
 
 # =============================================
 #   COMANDOS DE PUBLICACIÓN (solo admin)
 # =============================================
 
-def es_admin(update: Update) -> bool:
-    return update.effective_user.id == ADMIN_ID
-
 # ——— /pick partido | apuesta | cuota | liga | hora ———
 async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Respuesta inmediata para confirmar que el bot recibió el mensaje
-    await update.message.reply_text("🔄 Procesando tu apuesta...")
+    if not es_admin(update):
+        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
+        return
 
-    user_id = update.effective_user.id
-    username = update.effective_user.username
-    print(f"[DEBUG] Comando /pick recibido de user_id={user_id} (@{username})")
+    if not context.args:
+        await update.message.reply_text(
+            "📋 *Formato correcto:*\n`/pick partido | apuesta | cuota | liga | hora`\n\n"
+            "*Ejemplo:*\n`/pick Real Madrid vs Barça | Ambos Marcan | 1.80 | LaLiga | 21:00h`",
+            parse_mode="Markdown"
+        )
+        return
 
     try:
-        args = " ".join(context.args).split("|")
-        print(f"[DEBUG] Argumentos recibidos: {args}")
-        partido  = args[0].strip()
-        apuesta  = args[1].strip()
-        cuota    = args[2].strip()
-        liga     = args[3].strip() if len(args) > 3 else "Fútbol"
-        hora     = args[4].strip() if len(args) > 4 else "Hoy"
-
-
+        partes  = " ".join(context.args).split("|")
+        partido = partes[0].strip()
+        apuesta = partes[1].strip()
+        cuota   = partes[2].strip()
+        liga    = partes[3].strip() if len(partes) > 3 else "Fútbol"
+        hora    = partes[4].strip() if len(partes) > 4 else "Hoy"
 
         mensaje = (
             f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
@@ -244,8 +252,8 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚡️ _Realiza tu apuesta ahora antes de que la cuota empiece a bajar. ¡Vamos con todo!_"
         )
         teclado = [
-            [InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url="https://t.me/PicksEliteProBot")],
-            [InlineKeyboardButton("💬 SOPORTE / CONTACTO", url=CANAL_GRATIS)],
+            [InlineKeyboardButton("👑 UNIRSE AL CANAL VIP",   url=LINK_CANAL_VIP)],
+            [InlineKeyboardButton("💬 SOPORTE / CONTACTO",    url=LINK_CANAL_VIP)],
         ]
         await context.bot.send_message(
             chat_id=CANAL_ID,
@@ -253,32 +261,31 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Pick publicado en el canal!")
+        await update.message.reply_text("✅ Pick publicado en el canal.")
+        logger.info(f"[PICK] Publicado: {partido} | {apuesta} | {cuota}")
 
-    except Exception as e:
+    except (IndexError, ValueError) as e:
         await update.message.reply_text(
-            f"❌ Error al publicar: {str(e)}\n\n"
-            f"Asegúrate de usar el formato correcto:\n"
-            f"`/pick partido | apuesta | cuota | liga | hora`"
+            f"❌ Error al procesar los datos.\n\n"
+            f"Formato esperado:\n`/pick partido | apuesta | cuota | liga | hora`",
+            parse_mode="Markdown"
         )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al publicar en el canal:\n`{e}`", parse_mode="Markdown")
+        logger.error(f"[ERROR] /pick falló: {e}")
 
 
 # ——— /win partido | apuesta | cuota ———
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    print(f"[DEBUG] Comando /win recibido de user_id={user_id}")
     if not es_admin(update):
-        print(f"[DEBUG] Acceso denegado: user_id={user_id} no es ADMIN_ID={ADMIN_ID}")
-        await update.message.reply_text("No tienes permiso para usar este comando.")
+        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
         return
 
     try:
-        args = " ".join(context.args).split("|")
-        print(f"[DEBUG] Argumentos recibidos: {args}")
-        partido = args[0].strip()
-        apuesta = args[1].strip()
-        cuota   = args[2].strip() if len(args) > 2 else ""
-
+        partes  = " ".join(context.args).split("|")
+        partido = partes[0].strip()
+        apuesta = partes[1].strip()
+        cuota   = partes[2].strip() if len(partes) > 2 else ""
 
         cuota_linea = f"📈 *Cuota cobrada:* {cuota}\n" if cuota else ""
         mensaje = (
@@ -286,34 +293,35 @@ async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚽️ *Evento:* {partido}\n"
             f"🎯 *Pronóstico:* {apuesta} ✅\n"
             f"{cuota_linea}\n"
-            f"¡Cobramos otra apuesta gratuita de forma espectacular! La racha sigue intacta. ¡Felicidades a todos los que nos siguieron! 💰🔥\n\n"
-            f"🚀 _Si no quieres perderte ningún pick gratuito, recuerda activar las notificaciones de este canal._"
+            f"¡Cobramos otra apuesta gratuita! La racha sigue intacta. "
+            f"¡Felicidades a todos los que nos siguieron! 💰🔥\n\n"
+            f"🚀 _Si no quieres perderte ningún pick gratuito, activa las notificaciones del canal._"
         )
         teclado = [
-            [InlineKeyboardButton("💎 QUIERO SUSCRIBIRME AL VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("💎 QUIERO SUSCRIBIRME AL VIP", url=LINK_CANAL_VIP)],
         ]
         await context.bot.send_message(
-            chat_id=CANAL_ID,
-            text=mensaje,
-            parse_mode="Markdown",
+            chat_id=CANAL_ID, text=mensaje, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Resultado WIN publicado!")
+        await update.message.reply_text("✅ Resultado WIN publicado.")
+        logger.info(f"[WIN] Publicado: {partido}")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al publicar win: {str(e)}")
+        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
 
 # ——— /loss partido | apuesta | cuota ———
 async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update):
-        await update.message.reply_text("No tienes permiso para usar este comando.")
+        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
         return
 
     try:
-        args = " ".join(context.args).split("|")
-        partido = args[0].strip()
-        apuesta = args[1].strip()
-        cuota   = args[2].strip() if len(args) > 2 else ""
+        partes  = " ".join(context.args).split("|")
+        partido = partes[0].strip()
+        apuesta = partes[1].strip()
+        cuota   = partes[2].strip() if len(partes) > 2 else ""
 
         cuota_linea = f"📈 *Cuota:* {cuota}\n" if cuota else ""
         mensaje = (
@@ -321,93 +329,124 @@ async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚽️ *Evento:* {partido}\n"
             f"🎯 *Pronóstico:* {apuesta} ❌\n"
             f"{cuota_linea}\n"
-            f"Hoy no nos acompañó la suerte en este partido. Transparencia total como siempre. Recordad que la clave del éxito en las apuestas deportivas es la gestión estricta del bankroll a largo plazo.\n\n"
-            f"💪 _Seguimos analizando para traeros el próximo verde muy pronto. ¡Cabeza fría y a por la siguiente!_"
+            f"Hoy no nos acompañó la suerte en este partido. Transparencia total como siempre. "
+            f"Recordad: la clave es la gestión del bankroll a largo plazo.\n\n"
+            f"💪 _Seguimos analizando para traeros el próximo verde muy pronto. ¡Cabeza fría!_"
         )
         teclado = [
-            [InlineKeyboardButton("📊 VER HISTORIAL COMPLETO", url=CANAL_GRATIS)],
-            [InlineKeyboardButton("💎 CANAL VIP", url="https://t.me/PicksEliteProBot")],
+            [InlineKeyboardButton("📊 VER HISTORIAL COMPLETO", url=LINK_CANAL_GRATUITO)],
+            [InlineKeyboardButton("💎 CANAL VIP",              url=LINK_CANAL_VIP)],
         ]
         await context.bot.send_message(
-            chat_id=CANAL_ID,
-            text=mensaje,
-            parse_mode="Markdown",
+            chat_id=CANAL_ID, text=mensaje, parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Resultado LOSS publicado!")
+        await update.message.reply_text("✅ Resultado LOSS publicado.")
+        logger.info(f"[LOSS] Publicado: {partido}")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al publicar loss: {str(e)}")
+        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
 
 
 # ——— /aviso mensaje ———
 async def publicar_aviso(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update):
-        await update.message.reply_text("No tienes permiso para usar este comando.")
+        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
         return
-
     if not context.args:
         await update.message.reply_text("Uso: `/aviso tu mensaje aquí`", parse_mode="Markdown")
         return
 
     mensaje = " ".join(context.args)
-    teclado = [
-        [InlineKeyboardButton("📢 Canal Gratuito", url=CANAL_GRATIS)],
-    ]
+    teclado = [[InlineKeyboardButton("📢 Canal Gratuito", url=LINK_CANAL_GRATUITO)]]
     await context.bot.send_message(
         chat_id=CANAL_ID,
         text=f"📢 *AVISO — PICKS ÉLITE*\n\n{mensaje}",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(teclado)
     )
-    await update.message.reply_text("✅ Aviso publicado en el canal!")
+    await update.message.reply_text("✅ Aviso publicado en el canal.")
 
-# ——— /id (obtener tu ID de Telegram) ———
-async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    nombre  = update.effective_user.first_name
+
+# ——— /stats (solo admin) — Ver estadísticas del embudo ———
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_admin(update):
+        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
+        return
+
+    import sqlite3
+    from config import DB_PATH
+    with sqlite3.connect(DB_PATH) as conn:
+        total       = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
+        en_embudo   = conn.execute("SELECT COUNT(*) FROM usuarios WHERE estado_embudo = 'canal_gratis'").fetchone()[0]
+        enviados_24 = conn.execute("SELECT COUNT(*) FROM usuarios WHERE enviado_24h = 1").fetchone()[0]
+        enviados_72 = conn.execute("SELECT COUNT(*) FROM usuarios WHERE enviado_72h = 1").fetchone()[0]
+        enviados_7d = conn.execute("SELECT COUNT(*) FROM usuarios WHERE enviado_7d  = 1").fetchone()[0]
+
     await update.message.reply_text(
-        f"Tu ID de Telegram es:\n\n`{user_id}`\n\nHola {nombre}!",
+        f"📊 *Estadísticas del Embudo*\n\n"
+        f"👤 Total usuarios registrados: `{total}`\n"
+        f"⚽ En embudo (canal gratis): `{en_embudo}`\n\n"
+        f"📩 Follow-ups enviados:\n"
+        f"  • 24h: `{enviados_24}`\n"
+        f"  • 72h: `{enviados_72}`\n"
+        f"  • 7 días: `{enviados_7d}`",
         parse_mode="Markdown"
     )
 
-# ——— CONFIGURACIÓN INICIAL DEL BOT ———
+
+# =============================================
+#   ARRANQUE DEL BOT
+# =============================================
+
 async def post_init(application: Application):
-    # Solo registramos /start en el menú para que la interfaz quede limpia para los usuarios.
-    # Los comandos de admin (/pick, /win, etc.) se pueden escribir pero no se mostrarán en la lista.
+    """Configuración que se ejecuta una sola vez al iniciar el bot."""
+    # Solo mostramos /start en el menú de comandos (los de admin son ocultos)
     await application.bot.set_my_commands([
         BotCommand("start", "Abrir menú principal"),
     ])
+    # Arrancar el scheduler de follow-ups en segundo plano
+    asyncio.create_task(funnel.iniciar_scheduler(application.bot))
+    logger.info("[OK] Scheduler de follow-ups iniciado en segundo plano.")
 
 
-# ——— INICIAR BOT ———
 def main():
-    # Iniciar servidor de salud en segundo plano para Railway
+    # Servidor de salud en hilo secundario (necesario para Railway)
     threading.Thread(target=run_health_check_server, daemon=True).start()
 
-    app = Application.builder().token(TOKEN).post_init(post_init).build()
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
-    # Comandos públicos
+    # ——— Comandos públicos ———
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id",    get_id))
 
-    # Comandos de admin
+    # ——— Comandos de admin ———
     app.add_handler(CommandHandler("pick",  publicar_pick))
     app.add_handler(CommandHandler("win",   publicar_win))
     app.add_handler(CommandHandler("loss",  publicar_loss))
     app.add_handler(CommandHandler("aviso", publicar_aviso))
+    app.add_handler(CommandHandler("stats", stats))
 
-    # Botones — patrones exactos
+    # ——— Botones del menú ———
     app.add_handler(CallbackQueryHandler(canal_gratis, pattern="^canal_gratis$"))
     app.add_handler(CallbackQueryHandler(vip,          pattern="^vip$"))
     app.add_handler(CallbackQueryHandler(resultados,   pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(about,        pattern="^about$"))
     app.add_handler(CallbackQueryHandler(inicio,       pattern="^inicio$"))
 
-    print("[OK] Picks Elite Bot arrancado correctamente...")
-    print("[OK] @PicksEliteProBot esta activo - esperando mensajes...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("[OK] Picks Elite Bot arrancado correctamente...")
+    logger.info("[OK] @PicksEliteProBot esta activo — esperando mensajes...")
+
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,   # Evita el error Conflict en Railway
+    )
+
 
 if __name__ == "__main__":
     main()
-
