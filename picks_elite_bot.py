@@ -253,22 +253,23 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partido = p[0].strip() if len(p) > 0 else ""
         apuesta = p[1].strip() if len(p) > 1 else ""
         cuota   = p[2].strip() if len(p) > 2 else ""
-        liga    = p[3].strip() if len(p) > 3 else "Fútbol"
-        hora    = p[4].strip() if len(p) > 4 else "Hoy"
+        motivo  = p[3].strip() if len(p) > 3 else ""
 
         if not partido or not apuesta:
             await update.message.reply_text("❌ Falta el partido o el pronóstico. Usa las barras | para separar.")
             return
 
+        motivo_seccion = f"\nMotivo: {motivo}\n" if motivo else ""
+
+        # Formato exacto solicitado por la usuaria
         msg = (
-            f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
-            f"⚽️ *Evento:* {partido}\n"
-            f"🏆 *Liga:* {liga}\n"
-            f"⏰ *Hora:* {hora}\n\n"
-            f"🎯 *Pronóstico:* {apuesta}\n"
-            f"📈 *Cuota:* {cuota}\n"
-            f"💰 *Stake recomendado:* 2/10 (Stake 2)\n\n"
-            f"⚡️ _Realiza tu apuesta ahora antes de que la cuota empiece a bajar. ¡Vamos con todo!_"
+            f"*PRONÓSTICO RÁPIDO*\n\n"
+            f"*{partido}*\n"
+            f"➡️ {apuesta}\n"
+            f"➡️ Cuota: {cuota}\n"
+            f"{motivo_seccion}\n"
+            f"Suerte 🍀\n"
+            f"Apuesta con cabeza"
         )
         teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=LINK_VIP)]]
         await context.bot.send_message(
@@ -277,12 +278,17 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ ¡Pick publicado en el canal exitosamente!")
+        await update.message.reply_text("✅ ¡Pronóstico publicado en el canal exitosamente!")
         logger.info(f"[PICK SUCCESS] Publicado: {partido}")
 
     except Exception as e:
         logger.error(f"[PICK ERROR] {e}")
         await update.message.reply_text(f"❌ Error al publicar en el canal: `{e}`", parse_mode="Markdown")
+
+
+# ——— /pickrapido partido | apuesta | cuota | motivo ———
+async def publicar_pick_rapido(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await publicar_pick(update, context)
 
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update):
@@ -370,11 +376,13 @@ def main():
     app.add_handler(CommandHandler("id",    get_id))
 
     # Handlers admin
-    app.add_handler(CommandHandler("pick",  publicar_pick))
-    app.add_handler(CommandHandler("win",   publicar_win))
-    app.add_handler(CommandHandler("loss",  publicar_loss))
-    app.add_handler(CommandHandler("aviso", publicar_aviso))
-    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("pick",       publicar_pick))
+    app.add_handler(CommandHandler("pickrapido", publicar_pick_rapido))
+    app.add_handler(CommandHandler("pronostico", publicar_pick_rapido))
+    app.add_handler(CommandHandler("win",        publicar_win))
+    app.add_handler(CommandHandler("loss",       publicar_loss))
+    app.add_handler(CommandHandler("aviso",      publicar_aviso))
+    app.add_handler(CommandHandler("stats",      stats))
 
     # Callbacks del menu
     app.add_handler(CallbackQueryHandler(cb_canal_gratis, pattern="^canal_gratis$"))
@@ -383,12 +391,14 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_about,        pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_inicio,       pattern="^inicio$"))
 
-    # Handler universal de texto para capturar cualquier mensaje con /pick
+    # Handler universal de texto para capturar cualquier mensaje con /pick o /pickrapido
     async def handle_text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message and update.message.text:
-            txt = update.message.text.strip()
+            txt = update.message.text.strip().lower()
             logger.info(f"[FALLBACK TEXT] user_id={update.effective_user.id} texto='{txt}'")
-            if txt.lower().startswith("/pick") or txt.lower().startswith("pick"):
+            if txt.startswith("/pickrapido") or txt.startswith("pickrapido") or txt.startswith("/pronostico") or txt.startswith("pronostico"):
+                await publicar_pick_rapido(update, context)
+            elif txt.startswith("/pick") or txt.startswith("pick"):
                 await publicar_pick(update, context)
 
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_fallback))
