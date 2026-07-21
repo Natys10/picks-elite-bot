@@ -7,7 +7,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-from config import TOKEN, ADMIN_ID, CANAL_ID
+from config import TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID
 from database import Database
 from admin_panel import AdminPanel
 import templates
@@ -45,7 +45,7 @@ def get_link_gratis():
     return db.get_config("link_gratis", "https://t.me/PicksElitePro")
 
 def get_link_vip():
-    return db.get_config("link_vip", "https://t.me/PicksEliteProBot")
+    return db.get_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
 
 def menu_principal():
     return InlineKeyboardMarkup([
@@ -321,6 +321,10 @@ async def post_init(application: Application):
         BotCommand("start", "Abrir menú principal"),
         BotCommand("admin", "Panel de administración"),
     ])
+    # Asegurar que el link VIP siempre apunta al canal correcto
+    if not db.get_config("link_vip"):
+        db.set_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
+    logger.info("[OK] Links configurados correctamente.")
 
 def main():
     threading.Thread(target=run_health_check, daemon=True).start()
