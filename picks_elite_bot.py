@@ -7,7 +7,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 # =============================================
 #   PICKS ELITE BOT — v2.0 (todo en un archivo)
@@ -215,50 +215,74 @@ def es_admin(update: Update) -> bool:
     return uid == ADMIN_ID
 
 async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id if update.effective_user else 0
-    logger.info(f"[PICK] Recibido de {uid}")
-    await update.message.reply_text("Procesando pick...")
-
-    if not es_admin(update):
-        await update.message.reply_text(f"Sin permiso. Tu ID={uid}, Admin ID={ADMIN_ID}")
+    if not update.message or not update.message.text:
         return
 
-    if not context.args:
+    uid = update.effective_user.id if update.effective_user else 0
+    logger.info(f"[PICK] Recibido de {uid}: {update.message.text}")
+
+    # Enviar acuse de recibo inmediato
+    try:
+        await update.message.reply_text("🔄 Procesando pick...")
+    except Exception as err:
+        logger.error(f"[REPLY ERROR] {err}")
+
+    if not es_admin(update):
+        await update.message.reply_text(f"⛔ Sin permiso. Tu ID={uid}, Admin ID={ADMIN_ID}")
+        return
+
+    # Extraer texto despues de /pick
+    full_text = update.message.text.strip()
+    # Remover /pick o /pick@BotName
+    if full_text.startswith("/pick"):
+        partes_cmd = full_text.split(maxsplit=1)
+        content = partes_cmd[1].strip() if len(partes_cmd) > 1 else ""
+    else:
+        content = full_text
+
+    if not content:
         await update.message.reply_text(
-            "Formato: /pick partido | apuesta | cuota | liga | hora\n"
-            "Ejemplo: /pick Real Madrid vs Barcelona | Ambos Marcan | 1.80 | LaLiga | 21:00h"
+            "📋 *Formato:* /pick partido | apuesta | cuota | liga | hora\n\n"
+            "*Ejemplo:*\n`/pick Real Madrid vs Barcelona | Ambos Marcan | 1.80 | LaLiga | 21:00h`",
+            parse_mode="Markdown"
         )
         return
 
     try:
-        p = " ".join(context.args).split("|")
-        partido = p[0].strip()
-        apuesta = p[1].strip()
-        cuota   = p[2].strip()
-        liga    = p[3].strip() if len(p) > 3 else "Futbol"
+        p = content.split("|")
+        partido = p[0].strip() if len(p) > 0 else ""
+        apuesta = p[1].strip() if len(p) > 1 else ""
+        cuota   = p[2].strip() if len(p) > 2 else ""
+        liga    = p[3].strip() if len(p) > 3 else "Fútbol"
         hora    = p[4].strip() if len(p) > 4 else "Hoy"
 
+        if not partido or not apuesta:
+            await update.message.reply_text("❌ Falta el partido o el pronóstico. Usa las barras | para separar.")
+            return
+
         msg = (
-            f"NUEVA APUESTA GRATUITA\n\n"
-            f"Evento: {partido}\n"
-            f"Liga: {liga}\n"
-            f"Hora: {hora}\n\n"
-            f"Pronostico: {apuesta}\n"
-            f"Cuota: {cuota}\n"
-            f"Stake recomendado: 2/10\n\n"
-            f"Realiza tu apuesta antes de que la cuota baje."
+            f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
+            f"⚽️ *Evento:* {partido}\n"
+            f"🏆 *Liga:* {liga}\n"
+            f"⏰ *Hora:* {hora}\n\n"
+            f"🎯 *Pronóstico:* {apuesta}\n"
+            f"📈 *Cuota:* {cuota}\n"
+            f"💰 *Stake recomendado:* 2/10 (Stake 2)\n\n"
+            f"⚡️ _Realiza tu apuesta ahora antes de que la cuota empiece a bajar. ¡Vamos con todo!_"
         )
-        teclado = [[InlineKeyboardButton("Unirse al VIP", url=LINK_VIP)]]
+        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=LINK_VIP)]]
         await context.bot.send_message(
-            chat_id=CANAL_ID, text=msg,
+            chat_id=CANAL_ID,
+            text=msg,
+            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("Pick publicado en el canal.")
-        logger.info(f"[PICK] Publicado: {partido}")
+        await update.message.reply_text("✅ ¡Pick publicado en el canal exitosamente!")
+        logger.info(f"[PICK SUCCESS] Publicado: {partido}")
 
     except Exception as e:
         logger.error(f"[PICK ERROR] {e}")
-        await update.message.reply_text(f"Error: {e}")
+        await update.message.reply_text(f"❌ Error al publicar en el canal: `{e}`", parse_mode="Markdown")
 
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update):
@@ -358,6 +382,16 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_resultados,   pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(cb_about,        pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_inicio,       pattern="^inicio$"))
+
+    # Handler universal de texto para capturar cualquier mensaje con /pick
+    async def handle_text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.message and update.message.text:
+            txt = update.message.text.strip()
+            logger.info(f"[FALLBACK TEXT] user_id={update.effective_user.id} texto='{txt}'")
+            if txt.lower().startswith("/pick") or txt.lower().startswith("pick"):
+                await publicar_pick(update, context)
+
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_fallback))
 
     # Error handler
     async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
