@@ -290,6 +290,59 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def publicar_pick_rapido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await publicar_pick(update, context)
 
+# ——— /directo partido | apuesta | periodo | cuota ———
+async def publicar_directo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    uid = update.effective_user.id if update.effective_user else 0
+    if not es_admin(update):
+        await update.message.reply_text(f"⛔ Sin permiso. Tu ID={uid}, Admin ID={ADMIN_ID}")
+        return
+
+    full_text = update.message.text.strip()
+    if full_text.startswith("/directo") or full_text.startswith("/live"):
+        partes_cmd = full_text.split(maxsplit=1)
+        content = partes_cmd[1].strip() if len(partes_cmd) > 1 else ""
+    else:
+        content = full_text
+
+    if not content:
+        await update.message.reply_text(
+            "📋 *Formato:* /directo partido | apuesta | periodo | cuota\n\n"
+            "*Ejemplo:*\n`/directo Deportivo Toluca FC U21 vs Universidad Nacional U21 | Más de 0.5 goles | Primera Parte | 0.75`",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        p = content.split("|")
+        partido = p[0].strip() if len(p) > 0 else ""
+        apuesta = p[1].strip() if len(p) > 1 else ""
+        periodo = p[2].strip() if len(p) > 2 else "Primera Parte"
+        cuota   = p[3].strip() if len(p) > 3 else ""
+
+        msg = (
+            f"🚨 *ENTRAMOS EN DIRECTO* 🚨\n\n"
+            f"⚽ {partido}\n\n"
+            f"🎯 {apuesta}\n"
+            f"⏱️ {periodo}\n\n"
+            f"📈 Cuota {cuota}"
+        )
+        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=LINK_VIP)]]
+        await context.bot.send_message(
+            chat_id=CANAL_ID,
+            text=msg,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(teclado)
+        )
+        await update.message.reply_text("✅ ¡Apuesta en directo publicada en el canal!")
+        logger.info(f"[DIRECTO SUCCESS] Publicado: {partido}")
+
+    except Exception as e:
+        logger.error(f"[DIRECTO ERROR] {e}")
+        await update.message.reply_text(f"❌ Error al publicar: `{e}`", parse_mode="Markdown")
+
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_admin(update):
         await update.message.reply_text("Sin permiso.")
@@ -379,6 +432,8 @@ def main():
     app.add_handler(CommandHandler("pick",       publicar_pick))
     app.add_handler(CommandHandler("pickrapido", publicar_pick_rapido))
     app.add_handler(CommandHandler("pronostico", publicar_pick_rapido))
+    app.add_handler(CommandHandler("directo",    publicar_directo))
+    app.add_handler(CommandHandler("live",       publicar_directo))
     app.add_handler(CommandHandler("win",        publicar_win))
     app.add_handler(CommandHandler("loss",       publicar_loss))
     app.add_handler(CommandHandler("aviso",      publicar_aviso))
@@ -391,12 +446,14 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_about,        pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_inicio,       pattern="^inicio$"))
 
-    # Handler universal de texto para capturar cualquier mensaje con /pick o /pickrapido
+    # Handler universal de texto para capturar cualquier mensaje con /pick, /directo, etc.
     async def handle_text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message and update.message.text:
             txt = update.message.text.strip().lower()
             logger.info(f"[FALLBACK TEXT] user_id={update.effective_user.id} texto='{txt}'")
-            if txt.startswith("/pickrapido") or txt.startswith("pickrapido") or txt.startswith("/pronostico") or txt.startswith("pronostico"):
+            if txt.startswith("/directo") or txt.startswith("directo") or txt.startswith("/live") or txt.startswith("live"):
+                await publicar_directo(update, context)
+            elif txt.startswith("/pickrapido") or txt.startswith("pickrapido") or txt.startswith("/pronostico") or txt.startswith("pronostico"):
                 await publicar_pick_rapido(update, context)
             elif txt.startswith("/pick") or txt.startswith("pick"):
                 await publicar_pick(update, context)
