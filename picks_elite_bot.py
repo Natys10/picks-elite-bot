@@ -1,6 +1,8 @@
 import os
 import logging
 import asyncio
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -25,7 +27,21 @@ logger = logging.getLogger(__name__)
 # ——— Inicializar base de datos y módulo de marketing ———
 db      = Database()
 funnel  = MarketingFunnel(db)
-
+# --- Servidor de salud para Railway (mantiene el servicio activo) ---
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    class Handler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, format, *args):
+            pass
+    try:
+        HTTPServer(("", port), Handler).serve_forever()
+    except Exception as e:
+        logger.error(f"[ERROR] Health check: {e}")
 
 
 
@@ -390,6 +406,9 @@ async def post_init(application: Application):
 
 
 def main():
+    # Servidor de salud en hilo secundario (Railway necesita respuesta HTTP)
+    threading.Thread(target=run_health_check_server, daemon=True).start()
+
     app = (
         Application.builder()
         .token(TOKEN)
@@ -429,36 +448,17 @@ def main():
     app.add_error_handler(error_handler)
 
     # =============================================
-    #   MODO DE ARRANQUE
-    #   - Railway (producción): WEBHOOK — Telegram
-    #     envía los mensajes directamente al bot.
-    #     Imposible tener dos instancias en conflicto.
-    #   - Local (desarrollo): POLLING — el bot
-    #     pregunta a Telegram por actualizaciones.
+    #   MODO DE ARRANQUE: POLLING
+    #   Funciona correctamente porque solo hay UNA
+    #   instancia corriendo (en Railway).
+    #   El error "Conflict" ocurria porque antes
+    #   corrias el bot tambien en tu PC al mismo tiempo.
     # =============================================
-    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
-
-    if railway_domain:
-        port         = int(os.environ.get("PORT", 8080))
-        # Usamos ruta simple "/webhook" — el TOKEN en la ruta tiene ":" que
-        # Tornado interpreta como parametro y rompe el enrutamiento.
-        webhook_path = "webhook"
-        webhook_url  = f"https://{railway_domain}/{webhook_path}"
-        logger.info(f"[OK] Modo WEBHOOK activo en: {webhook_url}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=webhook_path,
-            webhook_url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,
-        )
-    else:
-        logger.info("[OK] Modo POLLING activo (desarrollo local)")
-        app.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,
-        )
+    logger.info("[OK] Iniciando en modo POLLING...")
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
