@@ -251,6 +251,8 @@ async def publicar_directo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al publicar: `{e}`", parse_mode="Markdown")
 
+WIN_BANNER_PATH = os.path.join(os.path.dirname(__file__), "win_banner.jpg")
+
 async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id): return
     try:
@@ -258,10 +260,44 @@ async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partes = full_text.split(maxsplit=1)
         content = partes[1].strip() if len(partes) > 1 else ""
         p = content.split("|")
-        msg = templates.format_win(p[0].strip(), p[1].strip(), p[2].strip() if len(p) > 2 else "")
+        caption = templates.format_win(p[0].strip(), p[1].strip(), p[2].strip() if len(p) > 2 else "")
         teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
-        await context.bot.send_message(chat_id=CANAL_ID, text=msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
-        await update.message.reply_text("✅ WIN publicado.")
+        with open(WIN_BANNER_PATH, "rb") as foto:
+            await context.bot.send_photo(
+                chat_id=CANAL_ID,
+                photo=foto,
+                caption=caption,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(teclado)
+            )
+        await update.message.reply_text("✅ ¡WIN publicado con imagen en el canal!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+async def publicar_doble_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Publica doble WIN con imagen: /dwin partido | apuesta1 | apuesta2 | cuota1 | cuota2"""
+    if not admin.is_admin(update.effective_user.id): return
+    try:
+        full_text = update.message.text.strip()
+        partes = full_text.split(maxsplit=1)
+        content = partes[1].strip() if len(partes) > 1 else ""
+        p = content.split("|")
+        partido  = p[0].strip() if len(p) > 0 else ""
+        apuesta1 = p[1].strip() if len(p) > 1 else ""
+        apuesta2 = p[2].strip() if len(p) > 2 else ""
+        cuota1   = p[3].strip() if len(p) > 3 else ""
+        cuota2   = p[4].strip() if len(p) > 4 else ""
+        caption = templates.format_doble_win(partido, apuesta1, apuesta2, cuota1, cuota2)
+        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
+        with open(WIN_BANNER_PATH, "rb") as foto:
+            await context.bot.send_photo(
+                chat_id=CANAL_ID,
+                photo=foto,
+                caption=caption,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(teclado)
+            )
+        await update.message.reply_text("✅ ¡Doble WIN publicado con imagen! 🔥🔥")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
 
@@ -307,6 +343,7 @@ def main():
     app.add_handler(CommandHandler("directo",    publicar_directo))
     app.add_handler(CommandHandler("live",       publicar_directo))
     app.add_handler(CommandHandler("win",        publicar_win))
+    app.add_handler(CommandHandler("dwin",       publicar_doble_win))
     app.add_handler(CommandHandler("loss",       publicar_loss))
 
     # Callbacks del menú
