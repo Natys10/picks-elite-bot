@@ -1,8 +1,6 @@
 import os
 import logging
 import asyncio
-import threading
-from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -28,23 +26,7 @@ logger = logging.getLogger(__name__)
 db      = Database()
 funnel  = MarketingFunnel(db)
 
-# ——— Servidor de salud para Railway ———
-def run_health_check_server():
-    port = int(os.environ.get("PORT", 8080))
-    class HealthCheckHandler(SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"OK")
-        def log_message(self, format, *args):
-            pass  # Silenciar logs del servidor HTTP
-    try:
-        httpd = HTTPServer(("", port), HealthCheckHandler)
-        logger.info(f"[OK] Servidor de salud iniciado en puerto {port}")
-        httpd.serve_forever()
-    except Exception as e:
-        logger.error(f"[ERROR] Servidor de salud no pudo iniciarse: {e}")
+
 
 
 # =============================================
@@ -411,9 +393,6 @@ async def post_init(application: Application):
 
 
 def main():
-    # Servidor de salud en hilo secundario (necesario para Railway)
-    threading.Thread(target=run_health_check_server, daemon=True).start()
-
     app = (
         Application.builder()
         .token(TOKEN)
@@ -442,10 +421,34 @@ def main():
     logger.info("[OK] Picks Elite Bot arrancado correctamente...")
     logger.info("[OK] @PicksEliteProBot esta activo — esperando mensajes...")
 
-    app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,   # Evita el error Conflict en Railway
-    )
+    # =============================================
+    #   MODO DE ARRANQUE
+    #   - Railway (producción): WEBHOOK — Telegram
+    #     envía los mensajes directamente al bot.
+    #     Imposible tener dos instancias en conflicto.
+    #   - Local (desarrollo): POLLING — el bot
+    #     pregunta a Telegram por actualizaciones.
+    # =============================================
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+
+    if railway_domain:
+        port        = int(os.environ.get("PORT", 8080))
+        webhook_url = f"https://{railway_domain}/{TOKEN}"
+        logger.info(f"[OK] Modo WEBHOOK activo en: {webhook_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=TOKEN,
+            webhook_url=webhook_url,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+    else:
+        logger.info("[OK] Modo POLLING activo (desarrollo local)")
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
 
 
 if __name__ == "__main__":
