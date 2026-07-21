@@ -203,15 +203,19 @@ async def inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ——— /pick partido | apuesta | cuota | liga | hora ———
 async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Respuesta inmediata: confirma que el bot recibio el comando
+    user_id = update.effective_user.id if update.effective_user else "?"
+    logger.info(f"[PICK] Comando recibido de user_id={user_id}")
+    await update.message.reply_text("Recibido. Procesando...")
+
     if not es_admin(update):
-        await update.message.reply_text("⛔ No tienes permiso para usar este comando.")
+        await update.message.reply_text("Sin permiso. Tu ID: " + str(user_id) + " Admin ID: " + str(ADMIN_ID))
         return
 
     if not context.args:
         await update.message.reply_text(
-            "📋 *Formato correcto:*\n`/pick partido | apuesta | cuota | liga | hora`\n\n"
-            "*Ejemplo:*\n`/pick Real Madrid vs Barça | Ambos Marcan | 1.80 | LaLiga | 21:00h`",
-            parse_mode="Markdown"
+            "Formato correcto:\n/pick partido | apuesta | cuota | liga | hora\n\n"
+            "Ejemplo:\n/pick Real Madrid vs Barca | Ambos Marcan | 1.80 | LaLiga | 21:00h"
         )
         return
 
@@ -220,41 +224,34 @@ async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partido = partes[0].strip()
         apuesta = partes[1].strip()
         cuota   = partes[2].strip()
-        liga    = partes[3].strip() if len(partes) > 3 else "Fútbol"
+        liga    = partes[3].strip() if len(partes) > 3 else "Futbol"
         hora    = partes[4].strip() if len(partes) > 4 else "Hoy"
 
         mensaje = (
-            f"🔥 *NUEVA APUESTA GRATUITA* 🔥\n\n"
-            f"⚽️ *Evento:* {partido}\n"
-            f"🏆 *Liga:* {liga}\n"
-            f"⏰ *Hora:* {hora}\n\n"
-            f"🎯 *Pronóstico:* {apuesta}\n"
-            f"📈 *Cuota:* {cuota}\n"
-            f"💰 *Stake recomendado:* 2/10 (Stake 2)\n\n"
-            f"⚡️ _Realiza tu apuesta ahora antes de que la cuota empiece a bajar. ¡Vamos con todo!_"
+            f"NUEVA APUESTA GRATUITA\n\n"
+            f"Evento: {partido}\n"
+            f"Liga: {liga}\n"
+            f"Hora: {hora}\n\n"
+            f"Pronostico: {apuesta}\n"
+            f"Cuota: {cuota}\n"
+            f"Stake recomendado: 2/10\n\n"
+            f"Realiza tu apuesta ahora antes de que la cuota baje."
         )
         teclado = [
-            [InlineKeyboardButton("👑 UNIRSE AL CANAL VIP",   url=LINK_CANAL_VIP)],
-            [InlineKeyboardButton("💬 SOPORTE / CONTACTO",    url=LINK_CANAL_VIP)],
+            [InlineKeyboardButton("UNIRSE AL CANAL VIP", url=LINK_CANAL_VIP)],
         ]
         await context.bot.send_message(
             chat_id=CANAL_ID,
             text=mensaje,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(teclado)
         )
-        await update.message.reply_text("✅ Pick publicado en el canal.")
+        await update.message.reply_text("Pick publicado en el canal.")
         logger.info(f"[PICK] Publicado: {partido} | {apuesta} | {cuota}")
 
-    except (IndexError, ValueError) as e:
-        await update.message.reply_text(
-            f"❌ Error al procesar los datos.\n\n"
-            f"Formato esperado:\n`/pick partido | apuesta | cuota | liga | hora`",
-            parse_mode="Markdown"
-        )
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al publicar en el canal:\n`{e}`", parse_mode="Markdown")
-        logger.error(f"[ERROR] /pick falló: {e}")
+        error_msg = str(e)
+        logger.error(f"[ERROR] /pick fallo: {error_msg}")
+        await update.message.reply_text(f"Error al publicar: {error_msg}")
 
 
 # ——— /win partido | apuesta | cuota ———
@@ -419,7 +416,17 @@ def main():
     app.add_handler(CallbackQueryHandler(inicio,       pattern="^inicio$"))
 
     logger.info("[OK] Picks Elite Bot arrancado correctamente...")
-    logger.info("[OK] @PicksEliteProBot esta activo — esperando mensajes...")
+    logger.info("[OK] @PicksEliteProBot esta activo - esperando mensajes...")
+
+    # Manejador de errores global
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+        logger.error(f"[ERROR GLOBAL] {context.error}")
+        if update and hasattr(update, 'message') and update.message:
+            try:
+                await update.message.reply_text(f"Error interno: {context.error}")
+            except Exception:
+                pass
+    app.add_error_handler(error_handler)
 
     # =============================================
     #   MODO DE ARRANQUE
