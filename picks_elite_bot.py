@@ -439,13 +439,16 @@ def main():
     railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
 
     if railway_domain:
-        port        = int(os.environ.get("PORT", 8080))
-        webhook_url = f"https://{railway_domain}/{TOKEN}"
+        port         = int(os.environ.get("PORT", 8080))
+        # Usamos ruta simple "/webhook" — el TOKEN en la ruta tiene ":" que
+        # Tornado interpreta como parametro y rompe el enrutamiento.
+        webhook_path = "webhook"
+        webhook_url  = f"https://{railway_domain}/{webhook_path}"
         logger.info(f"[OK] Modo WEBHOOK activo en: {webhook_url}")
         app.run_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=TOKEN,
+            url_path=webhook_path,
             webhook_url=webhook_url,
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
