@@ -41,10 +41,12 @@ ESPERANDO_START_MSG = 8
 
 # Banners por tipo de publicación
 BANNERS = {
-    "win":      os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
-    "pick":     os.path.join(os.path.dirname(__file__), "win_banner.jpg"),   # usar misma hasta tener banner pick
-    "directo":  os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
-    "loss":     os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
+    "win":       os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
+    "pick":      os.path.join(os.path.dirname(__file__), "pick_banner.jpg"),
+    "directo":   os.path.join(os.path.dirname(__file__), "live_free_banner.jpg"),
+    "vip_pick":  os.path.join(os.path.dirname(__file__), "vip_pick_banner.jpg"),
+    "vip_live":  os.path.join(os.path.dirname(__file__), "live_vip_banner.jpg"),
+    "loss":      os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
 }
 
 # =============================================
