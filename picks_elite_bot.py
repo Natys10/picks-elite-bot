@@ -74,10 +74,7 @@ def get_link_vip():
 
 def menu_principal():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚽ Canal Gratuito", url=get_link_gratis())],
-        [InlineKeyboardButton("💎 Canal VIP",      url=get_link_vip())],
-        [InlineKeyboardButton("📊 Resultados",     callback_data="resultados")],
-        [InlineKeyboardButton("ℹ️ Sobre nosotros", callback_data="about")],
+        [InlineKeyboardButton("🔥 ENTRAR AL CANAL GRATIS AQUÍ ⬇️", url=get_link_gratis())]
     ])
 
 def btn_volver_admin():
@@ -105,9 +102,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user:
         db.registrar_usuario(user.id, user.username, user.first_name)
-    start_text = db.get_config("start_text")
+        db.log_evento(user.id, "start")
+
+    texto = (
+        "✅ *SUSCRIPCIÓN ACTIVADA* ✅\n\n"
+        "Ya puedes disfrutar de todos nuestros pronósticos y análisis estadísticos totalmente *GRATIS* ⬇️"
+    )
     await update.message.reply_text(
-        start_text, parse_mode="Markdown", reply_markup=menu_principal()
+        texto, parse_mode="Markdown", reply_markup=menu_principal()
     )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -504,6 +506,8 @@ async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================
 async def post_init(application: Application):
     await application.bot.delete_webhook(drop_pending_updates=True)
+    # Limpiar comandos viejos cacheados antes de registrar los nuevos
+    await application.bot.delete_my_commands()
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
         BotCommand("admin",  "Panel de administración"),
