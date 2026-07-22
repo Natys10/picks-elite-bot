@@ -36,13 +36,41 @@ def format_pick_elite(partido: str, apuesta: str, cuota: str, liga: str = "Fútb
     )
 
 def format_win(partido: str, apuesta: str, cuota: str = "") -> str:
-    cuota_txt = f"\n📈 *Cuota cobrada:* {cuota}" if cuota else ""
+    cuota_txt = f" | Cuota {cuota} 💰" if cuota else ""
     return (
-        f"🟢 *¡¡BOOOOOOOOM VERDE DE PICKS ÉLITE!!* 🟢\n\n"
-        f"⚽️ *Evento:* {partido}\n"
-        f"🎯 *Pronóstico:* {apuesta} ✅{cuota_txt}\n\n"
-        f"¡Cobramos otra apuesta gratuita! La racha sigue intacta. 💰🔥\n\n"
-        f"🚀 _Activa las notificaciones del canal para no perderte el próximo._"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏆✨ *¡¡ V E R D E !!* ✨🏆\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n\n"
+        f"⚽ *{partido}*\n\n"
+        f"✅ *{apuesta}*{cuota_txt} — *GANADO*\n\n"
+        f"🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n\n"
+        f"💚 *Otra apuesta, otro verde.*\n"
+        f"📈 Esto es análisis, no suerte.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💎 *Picks Élite — Apuesta con cabeza*"
+    )
+
+def format_doble_win(partido: str, apuesta1: str, apuesta2: str, cuota1: str = "", cuota2: str = "") -> str:
+    c1 = f" | Cuota {cuota1} 💰" if cuota1 else ""
+    c2 = f" | Cuota {cuota2} 💰" if cuota2 else ""
+    return (
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏆🔥 *¡¡ D O S   V E R D E S !!* 🔥🏆\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💥💥💥💥💥💥💥💥💥💥💥💥\n\n"
+        f"⚽ *{partido}*\n\n"
+        f"✅ *{apuesta1}*{c1} — *GANADO*\n"
+        f"✅ *{apuesta2}*{c2} — *GANADO*\n\n"
+        f"💥💥💥💥💥💥💥💥💥💥💥💥\n\n"
+        f"💚 *Dos de dos. Sin fallos.*\n"
+        f"📈 Puro análisis. Pura estadística.\n"
+        f"🎯 Racha activa. Confianza máxima.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💎 *¿Quieres los picks VIP con cuotas más altas?*\n"
+        f"👇 Accede al canal premium ahora mismo\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🍀 *Picks Élite — Apuesta con cabeza*"
     )
 
 def format_loss(partido: str, apuesta: str) -> str:
