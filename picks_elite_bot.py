@@ -76,7 +76,7 @@ def get_link_vip():
 
 def menu_principal():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 ENTRAR AL CANAL GRATIS AQUÍ ⬇️", url=get_link_gratis())]
+        [InlineKeyboardButton("ENTRAR AHORA ↗️", url=get_link_gratis())]
     ])
 
 def btn_volver_admin():
@@ -110,8 +110,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"[START DB ERROR] {e}")
 
     texto = (
-        "✅ *SUSCRIPCIÓN ACTIVADA* ✅\n\n"
-        "Ya puedes disfrutar de todos nuestros pronósticos y análisis estadísticos totalmente *GRATIS* ⬇️"
+        "✅ *Suscripción Premium Activada* ✅\n\n"
+        "Entra ahora para ver el pronóstico gratis de hoy ⬇️"
     )
     await update.message.reply_text(
         texto, parse_mode="Markdown", reply_markup=menu_principal()
