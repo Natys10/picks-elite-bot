@@ -5,7 +5,10 @@ import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    ContextTypes, MessageHandler, filters, ConversationHandler
+)
 
 from config import TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID
 from database import Database
@@ -13,7 +16,8 @@ from admin_panel import AdminPanel
 import templates
 
 # =============================================
-#   PICKS ÉLITE PLATFORM — v3.0 (AUTOMATIZACIÓN & MARKETING)
+#   PICKS ÉLITE PLATFORM — v4.0
+#   Panel de administración completo
 # =============================================
 
 logging.basicConfig(
@@ -22,11 +26,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- INICIALIZAR MOTOR ---
 db    = Database()
 admin = AdminPanel(db)
 
-# --- SERVIDOR DE SALUD (Railway) ---
+# Estados para ConversationHandler
+ESPERANDO_PICK      = 1
+ESPERANDO_DIRECTO   = 2
+ESPERANDO_WIN       = 3
+ESPERANDO_DWIN      = 4
+ESPERANDO_LOSS      = 5
+ESPERANDO_RESULTADO = 6
+ESPERANDO_BROADCAST = 7
+ESPERANDO_START_MSG = 8
+
+# Banners por tipo de publicación
+BANNERS = {
+    "win":      os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
+    "pick":     os.path.join(os.path.dirname(__file__), "win_banner.jpg"),   # usar misma hasta tener banner pick
+    "directo":  os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
+    "loss":     os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
+}
+
+# =============================================
+#   SERVIDOR DE SALUD (Railway)
+# =============================================
 def run_health_check():
     port = int(os.environ.get("PORT", 8080))
     class H(SimpleHTTPRequestHandler):
@@ -40,7 +63,9 @@ def run_health_check():
     except Exception as e:
         logger.error(f"[HEALTH] {e}")
 
-# --- MENÚ PRINCIPAL DINÁMICO ---
+# =============================================
+#   HELPERS
+# =============================================
 def get_link_gratis():
     return db.get_config("link_gratis", "https://t.me/PicksElitePro")
 
@@ -50,32 +75,48 @@ def get_link_vip():
 def menu_principal():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚽ Canal Gratuito", url=get_link_gratis())],
-        [InlineKeyboardButton("💎 Canal VIP",      callback_data="vip")],
+        [InlineKeyboardButton("💎 Canal VIP",      url=get_link_vip())],
         [InlineKeyboardButton("📊 Resultados",     callback_data="resultados")],
         [InlineKeyboardButton("ℹ️ Sobre nosotros", callback_data="about")],
     ])
 
-def btn_volver():
-    return [[InlineKeyboardButton("Volver al menú", callback_data="inicio")]]
+def btn_volver_admin():
+    return [[InlineKeyboardButton("⬅️ Volver al panel", callback_data="admin_menu")]]
 
-# --- HANDLERS PÚBLICOS ---
+def btn_volver_menu():
+    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")]]
+
+async def send_photo_canal(bot, canal, img_path, caption, keyboard=None):
+    """Envía imagen+caption al canal dado."""
+    markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    with open(img_path, "rb") as f:
+        await bot.send_photo(
+            chat_id=canal,
+            photo=f,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+
+# =============================================
+#   HANDLERS PÚBLICOS
+# =============================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user:
         db.registrar_usuario(user.id, user.username, user.first_name)
-    
     start_text = db.get_config("start_text")
     await update.message.reply_text(
-        start_text,
-        parse_mode="Markdown",
-        reply_markup=menu_principal()
+        start_text, parse_mode="Markdown", reply_markup=menu_principal()
     )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     await update.message.reply_text(f"Tu ID de Telegram es: `{uid}`", parse_mode="Markdown")
 
-# --- CALLBACKS DEL MENÚ ---
+# =============================================
+#   CALLBACKS MENÚ PÚBLICO
+# =============================================
 async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -86,27 +127,27 @@ async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Gestión profesional de bankroll\n"
         "✅ Soporte directo con el analista\n\n"
         "💰 *Precio: €29 / mes*\n\n"
-        "Para suscribirte contáctanos directamente 👇"
+        "Para suscribirte accede ahora 👇"
     )
     teclado = [
-        [InlineKeyboardButton("✉️ Contactar para VIP", url=get_link_vip())],
-        *btn_volver(),
+        [InlineKeyboardButton("💎 Acceder al Canal VIP", url=get_link_vip())],
+        *btn_volver_menu(),
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
 async def cb_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    st = db.get_stats()
     texto = (
         "📊 *Historial de Resultados*\n\n"
-        "🗓 *Julio 2026*\n"
-        "✅ Picks acertados: 0\n"
-        "❌ Picks fallados: 0\n\n"
-        "_Canal recién lanzado. Los resultados se actualizarán cada día._"
+        f"✅ Picks acertados: `{st.get('wins', 0)}`\n"
+        f"❌ Picks fallados: `{st.get('losses', 0)}`\n\n"
+        "_Resultados actualizados en tiempo real._"
     )
     teclado = [
         [InlineKeyboardButton("📢 Ver canal gratuito", url=get_link_gratis())],
-        *btn_volver(),
+        *btn_volver_menu(),
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
@@ -115,13 +156,13 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     texto = (
         "ℹ️ *Sobre Picks Élite*\n\n"
-        "Canal de pronósticos de fútbol con enfoque *100% estadístico y analítico*.\n\n"
+        "Canal de pronósticos con enfoque *100% estadístico y analítico*.\n\n"
         "📌 Canal gratuito: @PicksElitePro\n"
         "💎 Canal VIP: Solo para suscriptores"
     )
     teclado = [
         [InlineKeyboardButton("📢 Unirse gratis", url=get_link_gratis())],
-        *btn_volver(),
+        *btn_volver_menu(),
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
@@ -134,197 +175,344 @@ async def cb_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await query.message.reply_text(start_text, parse_mode="Markdown", reply_markup=menu_principal())
 
-# --- PANEL DE ADMINISTRACIÓN (/admin) ---
+# =============================================
+#   PANEL DE ADMINISTRACIÓN
+# =============================================
+def get_panel_admin_markup():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Estadísticas",          callback_data="admin_stats")],
+        [InlineKeyboardButton("📣 Publicar en Canales",   callback_data="admin_publicar")],
+        [InlineKeyboardButton("✏️ Mensaje de Bienvenida", callback_data="admin_edit_start")],
+        [InlineKeyboardButton("📢 Difusión (Broadcast)",  callback_data="admin_broadcast_info")],
+        [InlineKeyboardButton("🔗 Editar Links",          callback_data="admin_edit_links")],
+    ])
+
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await admin.show_admin_panel(update, context)
-
-async def cmd_setstart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Sin permisos.")
         return
-    if not context.args:
-        await update.message.reply_text("📋 *Uso:* `/setstart Tu nuevo texto de bienvenida aquí`", parse_mode="Markdown")
-        return
-    nuevo_texto = " ".join(context.args)
-    db.set_config("start_text", nuevo_texto)
-    await update.message.reply_text("✅ *Mensaje de bienvenida actualizado exitosamente.*", parse_mode="Markdown")
+    await update.message.reply_text(
+        "⚙️ *PANEL DE CONTROL — PICKS ÉLITE*\n\nSelecciona una opción:",
+        parse_mode="Markdown",
+        reply_markup=get_panel_admin_markup()
+    )
 
-async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not admin.is_admin(update.effective_user.id):
-        return
-    if not context.args:
-        await update.message.reply_text("📋 *Uso:* `/broadcast Tu mensaje de difusión aquí`", parse_mode="Markdown")
-        return
-    mensaje = " ".join(context.args)
-    await update.message.reply_text("🚀 *Iniciando difusión masiva...*", parse_mode="Markdown")
-    enviados = await admin.broadcast_message(context.bot, mensaje)
-    await update.message.reply_text(f"✅ *Difusión completada:* Enviado a `{enviados}` usuarios.", parse_mode="Markdown")
+async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "⚙️ *PANEL DE CONTROL — PICKS ÉLITE*\n\nSelecciona una opción:",
+        parse_mode="Markdown",
+        reply_markup=get_panel_admin_markup()
+    )
 
+async def cb_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    st = db.get_stats()
+    texto = (
+        "📊 *Estadísticas de la Plataforma*\n\n"
+        f"👤 Usuarios registrados: `{st['total']}`\n"
+        f"⚽ En embudo canal gratis: `{st['en_embudo']}`\n"
+        f"📣 Campañas lanzadas: `{st['campanas']}`"
+    )
+    await query.edit_message_text(texto, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(btn_volver_admin()))
+
+async def cb_admin_publicar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Submenú de publicación de contenido."""
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    teclado = [
+        [InlineKeyboardButton("⚡ Pick rápido",       callback_data="pub_pick")],
+        [InlineKeyboardButton("🚨 En Directo / Live", callback_data="pub_directo")],
+        [InlineKeyboardButton("🏆 WIN (1 pick)",      callback_data="pub_win")],
+        [InlineKeyboardButton("💥 DOS VERDES (2 picks)", callback_data="pub_dwin")],
+        [InlineKeyboardButton("📊 Resultado partido", callback_data="pub_resultado")],
+        [InlineKeyboardButton("🔴 LOSS",              callback_data="pub_loss")],
+        *btn_volver_admin(),
+    ]
+    await query.edit_message_text(
+        "📣 *PUBLICAR EN CANALES*\n\n¿Qué quieres publicar?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(teclado)
+    )
+
+# — Instrucciones de cada tipo de publicación —
+INSTRUCCIONES = {
+    "pub_pick": (
+        ESPERANDO_PICK,
+        "⚡ *PICK RÁPIDO*\n\nEnvía los datos así:\n\n"
+        "`partido | apuesta | cuota | motivo`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | Ambos marcan: SÍ | 2.05 | Liga U21 = muchos goles`"
+    ),
+    "pub_directo": (
+        ESPERANDO_DIRECTO,
+        "🚨 *EN DIRECTO*\n\nEnvía los datos así:\n\n"
+        "`partido | apuesta | período | cuota`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | +0.5 goles | Primera Parte | 0.75`"
+    ),
+    "pub_win": (
+        ESPERANDO_WIN,
+        "🏆 *WIN (1 pick)*\n\nEnvía los datos así:\n\n"
+        "`partido | apuesta | cuota`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | Ambos marcan: SÍ | 2.05`"
+    ),
+    "pub_dwin": (
+        ESPERANDO_DWIN,
+        "💥 *DOS VERDES*\n\nEnvía los datos así:\n\n"
+        "`partido | apuesta1 | apuesta2 | cuota1 | cuota2`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | +0.5 goles 1T | Ambos marcan: SÍ | 0.75 | 2.05`"
+    ),
+    "pub_resultado": (
+        ESPERANDO_RESULTADO,
+        "📊 *RESULTADO DE PARTIDO*\n\nEnvía los datos así:\n\n"
+        "`partido | resultado | pick1 | pick2 | detalle`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | 1-1 | +0.5 goles 1T GANADO | Ambos marcan GANADO | Partido muy movido`"
+    ),
+    "pub_loss": (
+        ESPERANDO_LOSS,
+        "🔴 *LOSS*\n\nEnvía los datos así:\n\n"
+        "`partido | apuesta`\n\n"
+        "*Ejemplo:*\n"
+        "`Toluca vs Pumas | Victoria Toluca`"
+    ),
+}
+
+async def cb_pub_tipo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja cualquier botón de tipo de publicación."""
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    data = query.data
+    if data not in INSTRUCCIONES: return
+    estado, instruccion = INSTRUCCIONES[data]
+    context.user_data["pub_estado"] = estado
+    context.user_data["pub_tipo"]   = data
+    await query.edit_message_text(
+        instruccion + "\n\n_O envía /cancelar para salir._",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Cancelar", callback_data="admin_publicar")
+        ]])
+    )
+
+async def cb_admin_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    context.user_data["pub_estado"] = ESPERANDO_START_MSG
+    await query.edit_message_text(
+        "✏️ *EDITAR MENSAJE DE BIENVENIDA*\n\n"
+        "Escribe el nuevo texto de bienvenida.\n"
+        "Puedes usar *negrita*, _cursiva_ y emojis.\n\n"
+        "_Envía /cancelar para salir._",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")
+        ]])
+    )
+
+async def cb_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    context.user_data["pub_estado"] = ESPERANDO_BROADCAST
+    usuarios = db.get_stats()["total"]
+    await query.edit_message_text(
+        f"📢 *DIFUSIÓN MASIVA*\n\n"
+        f"Se enviará a *{usuarios} usuarios* registrados.\n\n"
+        "Escribe el mensaje que quieres difundir:\n\n"
+        "_Envía /cancelar para salir._",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")
+        ]])
+    )
+
+async def cb_admin_edit_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    link_g = get_link_gratis()
+    link_v = get_link_vip()
+    await query.edit_message_text(
+        f"🔗 *LINKS ACTUALES*\n\n"
+        f"⚽ Canal Gratis: `{link_g}`\n"
+        f"💎 Canal VIP: `{link_v}`\n\n"
+        "Para cambiar usa estos comandos:\n"
+        "`/setlink gratis https://t.me/...`\n"
+        "`/setlink vip https://t.me/...`",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(btn_volver_admin())
+    )
+
+# =============================================
+#   MANEJADOR DE TEXTO ENTRANTE (publicaciones)
+# =============================================
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text: return
+    uid = update.effective_user.id
+    if not admin.is_admin(uid): return
+
+    estado = context.user_data.get("pub_estado")
+    text   = update.message.text.strip()
+
+    # Cancelar
+    if text.lower() in ["/cancelar", "cancelar"]:
+        context.user_data.pop("pub_estado", None)
+        context.user_data.pop("pub_tipo", None)
+        await update.message.reply_text("❌ Operación cancelada.", reply_markup=get_panel_admin_markup())
+        return
+
+    if estado == ESPERANDO_START_MSG:
+        db.set_config("start_text", text)
+        context.user_data.pop("pub_estado", None)
+        await update.message.reply_text("✅ Mensaje de bienvenida actualizado.", reply_markup=get_panel_admin_markup())
+
+    elif estado == ESPERANDO_BROADCAST:
+        context.user_data.pop("pub_estado", None)
+        await update.message.reply_text("🚀 Enviando difusión...")
+        enviados = await admin.broadcast_message(context.bot, text)
+        await update.message.reply_text(f"✅ Difusión enviada a `{enviados}` usuarios.", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_PICK:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            msg = templates.format_pronostico_rapido(
+                p[0].strip(), p[1].strip(),
+                p[2].strip() if len(p) > 2 else "",
+                p[3].strip() if len(p) > 3 else ""
+            )
+            teclado = [[InlineKeyboardButton("👑 CANAL VIP", url=get_link_vip())]]
+            await send_photo_canal(context.bot, CANAL_ID, BANNERS["pick"], msg, teclado)
+            await update.message.reply_text("✅ ¡Pick publicado en el canal gratuito!", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_DIRECTO:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            msg = templates.format_directo(
+                p[0].strip(), p[1].strip(),
+                p[2].strip() if len(p) > 2 else "Primera Parte",
+                p[3].strip() if len(p) > 3 else ""
+            )
+            teclado = [[InlineKeyboardButton("👑 CANAL VIP", url=get_link_vip())]]
+            await send_photo_canal(context.bot, CANAL_ID, BANNERS["directo"], msg, teclado)
+            await update.message.reply_text("✅ ¡Apuesta en directo publicada!", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_WIN:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            msg = templates.format_win(
+                p[0].strip(), p[1].strip(),
+                p[2].strip() if len(p) > 2 else ""
+            )
+            teclado = [[InlineKeyboardButton("👑 CANAL VIP", url=get_link_vip())]]
+            await send_photo_canal(context.bot, CANAL_ID, BANNERS["win"], msg, teclado)
+            await update.message.reply_text("✅ ¡WIN publicado con imagen!", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_DWIN:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            msg = templates.format_doble_win(
+                p[0].strip(),
+                p[1].strip() if len(p) > 1 else "",
+                p[2].strip() if len(p) > 2 else "",
+                p[3].strip() if len(p) > 3 else "",
+                p[4].strip() if len(p) > 4 else ""
+            )
+            teclado = [[InlineKeyboardButton("👑 CANAL VIP", url=get_link_vip())]]
+            await send_photo_canal(context.bot, CANAL_ID, BANNERS["win"], msg, teclado)
+            await update.message.reply_text("✅ ¡Doble WIN publicado con imagen! 🔥", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_RESULTADO:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            partido  = p[0].strip()
+            resultado = p[1].strip() if len(p) > 1 else ""
+            pick1    = p[2].strip() if len(p) > 2 else ""
+            pick2    = p[3].strip() if len(p) > 3 else ""
+            detalle  = p[4].strip() if len(p) > 4 else ""
+            msg = templates.format_resultado(partido, resultado, pick1, pick2, detalle)
+            teclado = [[InlineKeyboardButton("👑 QUIERO EL CANAL VIP", url=get_link_vip())]]
+            await send_photo_canal(context.bot, CANAL_ID, BANNERS["win"], msg, teclado)
+            await update.message.reply_text("✅ ¡Resultado publicado!", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+    elif estado == ESPERANDO_LOSS:
+        context.user_data.pop("pub_estado", None)
+        try:
+            p = text.split("|")
+            msg = templates.format_loss(p[0].strip(), p[1].strip() if len(p) > 1 else "")
+            await context.bot.send_message(chat_id=CANAL_ID, text=msg, parse_mode="Markdown")
+            await update.message.reply_text("✅ LOSS publicado.", reply_markup=get_panel_admin_markup())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+
+# =============================================
+#   COMANDOS ADMIN ADICIONALES
+# =============================================
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not admin.is_admin(update.effective_user.id):
-        return
+    if not admin.is_admin(update.effective_user.id): return
     st = db.get_stats()
     await update.message.reply_text(
-        f"📊 *Estadísticas de la Plataforma*\n\n"
-        f"👤 *Total usuarios registrados:* `{st['total']}`\n"
-        f"⚽ *En embudo (Canal Gratis):* `{st['en_embudo']}`\n"
-        f"📢 *Campañas lanzadas:* `{st['campanas']}`",
+        f"📊 *Estadísticas*\n\n"
+        f"👤 Usuarios: `{st['total']}`\n"
+        f"⚽ En embudo: `{st['en_embudo']}`\n"
+        f"📣 Campañas: `{st['campanas']}`",
         parse_mode="Markdown"
     )
 
-# --- COMANDOS DE PUBLICACIÓN (CON PLANTILLAS) ---
-
-async def publicar_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text: return
-    if not admin.is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Sin permiso de administración.")
-        return
-
-    full_text = update.message.text.strip()
-    partes = full_text.split(maxsplit=1)
-    content = partes[1].strip() if len(partes) > 1 else ""
-
-    if not content:
-        await update.message.reply_text(
-            "📋 *Formato:* `/pick partido | apuesta | cuota | motivo`\n\n"
-            "*Ejemplo:*\n`/pick Toluca U21 vs Pumas U21 | Ambos marcan: SÍ | 2.05 | Liga U21 = muchos goles.`",
-            parse_mode="Markdown"
-        )
-        return
-
-    try:
-        p = content.split("|")
-        partido = p[0].strip() if len(p) > 0 else ""
-        apuesta = p[1].strip() if len(p) > 1 else ""
-        cuota   = p[2].strip() if len(p) > 2 else ""
-        motivo  = p[3].strip() if len(p) > 3 else ""
-
-        msg = templates.format_pronostico_rapido(partido, apuesta, cuota, motivo)
-        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
-
-        await context.bot.send_message(
-            chat_id=CANAL_ID,
-            text=msg,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(teclado)
-        )
-        await update.message.reply_text("✅ ¡Pronóstico publicado en el canal exitosamente!")
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al publicar: `{e}`", parse_mode="Markdown")
-
-async def publicar_directo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text: return
-    if not admin.is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Sin permiso de administración.")
-        return
-
-    full_text = update.message.text.strip()
-    partes = full_text.split(maxsplit=1)
-    content = partes[1].strip() if len(partes) > 1 else ""
-
-    if not content:
-        await update.message.reply_text(
-            "📋 *Formato:* `/directo partido | apuesta | periodo | cuota`\n\n"
-            "*Ejemplo:*\n`/directo Toluca U21 vs Pumas U21 | Más de 0.5 goles | Primera Parte | 0.75`",
-            parse_mode="Markdown"
-        )
-        return
-
-    try:
-        p = content.split("|")
-        partido = p[0].strip() if len(p) > 0 else ""
-        apuesta = p[1].strip() if len(p) > 1 else ""
-        periodo = p[2].strip() if len(p) > 2 else "Primera Parte"
-        cuota   = p[3].strip() if len(p) > 3 else ""
-
-        msg = templates.format_directo(partido, apuesta, periodo, cuota)
-        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
-
-        await context.bot.send_message(
-            chat_id=CANAL_ID,
-            text=msg,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(teclado)
-        )
-        await update.message.reply_text("✅ ¡Apuesta en directo publicada en el canal exitosamente!")
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al publicar: `{e}`", parse_mode="Markdown")
-
-WIN_BANNER_PATH = os.path.join(os.path.dirname(__file__), "win_banner.jpg")
-
-async def publicar_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id): return
-    try:
-        full_text = update.message.text.strip()
-        partes = full_text.split(maxsplit=1)
-        content = partes[1].strip() if len(partes) > 1 else ""
-        p = content.split("|")
-        caption = templates.format_win(p[0].strip(), p[1].strip(), p[2].strip() if len(p) > 2 else "")
-        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
-        with open(WIN_BANNER_PATH, "rb") as foto:
-            await context.bot.send_photo(
-                chat_id=CANAL_ID,
-                photo=foto,
-                caption=caption,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(teclado)
-            )
-        await update.message.reply_text("✅ ¡WIN publicado con imagen en el canal!")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
+    if len(context.args) < 2:
+        await update.message.reply_text("Uso: `/setlink gratis|vip https://t.me/...`", parse_mode="Markdown")
+        return
+    tipo, url = context.args[0].lower(), context.args[1]
+    if tipo == "gratis":
+        db.set_config("link_gratis", url)
+        await update.message.reply_text(f"✅ Link canal gratuito actualizado: `{url}`", parse_mode="Markdown")
+    elif tipo == "vip":
+        db.set_config("link_vip", url)
+        await update.message.reply_text(f"✅ Link canal VIP actualizado: `{url}`", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("Tipo inválido. Usa `gratis` o `vip`.", parse_mode="Markdown")
 
-async def publicar_doble_win(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Publica doble WIN con imagen: /dwin partido | apuesta1 | apuesta2 | cuota1 | cuota2"""
-    if not admin.is_admin(update.effective_user.id): return
-    try:
-        full_text = update.message.text.strip()
-        partes = full_text.split(maxsplit=1)
-        content = partes[1].strip() if len(partes) > 1 else ""
-        p = content.split("|")
-        partido  = p[0].strip() if len(p) > 0 else ""
-        apuesta1 = p[1].strip() if len(p) > 1 else ""
-        apuesta2 = p[2].strip() if len(p) > 2 else ""
-        cuota1   = p[3].strip() if len(p) > 3 else ""
-        cuota2   = p[4].strip() if len(p) > 4 else ""
-        caption = templates.format_doble_win(partido, apuesta1, apuesta2, cuota1, cuota2)
-        teclado = [[InlineKeyboardButton("👑 UNIRSE AL CANAL VIP", url=get_link_vip())]]
-        with open(WIN_BANNER_PATH, "rb") as foto:
-            await context.bot.send_photo(
-                chat_id=CANAL_ID,
-                photo=foto,
-                caption=caption,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(teclado)
-            )
-        await update.message.reply_text("✅ ¡Doble WIN publicado con imagen! 🔥🔥")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
-
-async def publicar_loss(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not admin.is_admin(update.effective_user.id): return
-    try:
-        full_text = update.message.text.strip()
-        partes = full_text.split(maxsplit=1)
-        content = partes[1].strip() if len(partes) > 1 else ""
-        p = content.split("|")
-        msg = templates.format_loss(p[0].strip(), p[1].strip())
-        await context.bot.send_message(chat_id=CANAL_ID, text=msg, parse_mode="Markdown")
-        await update.message.reply_text("✅ LOSS publicado.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
-
-# --- ARRANQUE DE LA PLATAFORMA ---
+# =============================================
+#   ARRANQUE
+# =============================================
 async def post_init(application: Application):
     await application.bot.delete_webhook(drop_pending_updates=True)
     await application.bot.set_my_commands([
-        BotCommand("start", "Abrir menú principal"),
-        BotCommand("admin", "Panel de administración"),
+        BotCommand("start",  "Abrir menú principal"),
+        BotCommand("admin",  "Panel de administración"),
+        BotCommand("stats",  "Ver estadísticas"),
     ])
-    # Asegurar que el link VIP siempre apunta al canal correcto
-    if not db.get_config("link_vip"):
-        db.set_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
-    logger.info("[OK] Links configurados correctamente.")
+    # Forzar siempre el link correcto (por si Railway tiene el viejo en su BD)
+    db.set_config("link_vip",    "https://t.me/+ldrgDvLiC5NhOTRk")
+    db.set_config("link_gratis", "https://t.me/PicksElitePro")
+    logger.info("[OK] Picks Elite Platform v4.0 lista.")
 
 def main():
     threading.Thread(target=run_health_check, daemon=True).start()
@@ -332,42 +520,35 @@ def main():
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     # Público
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("id",    get_id))
+    app.add_handler(CommandHandler("start",  start))
+    app.add_handler(CommandHandler("id",     get_id))
 
-    # Admin Panel
-    app.add_handler(CommandHandler("admin",     cmd_admin))
-    app.add_handler(CommandHandler("setstart",  cmd_setstart))
-    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
-    app.add_handler(CommandHandler("stats",     cmd_stats))
+    # Admin comandos directos
+    app.add_handler(CommandHandler("admin",  cmd_admin))
+    app.add_handler(CommandHandler("stats",  cmd_stats))
+    app.add_handler(CommandHandler("setlink", cmd_setlink))
 
-    # Publicación con Plantillas
-    app.add_handler(CommandHandler("pick",       publicar_pick))
-    app.add_handler(CommandHandler("pickrapido", publicar_pick))
-    app.add_handler(CommandHandler("directo",    publicar_directo))
-    app.add_handler(CommandHandler("live",       publicar_directo))
-    app.add_handler(CommandHandler("win",        publicar_win))
-    app.add_handler(CommandHandler("dwin",       publicar_doble_win))
-    app.add_handler(CommandHandler("loss",       publicar_loss))
-
-    # Callbacks del menú
+    # Callbacks menú público
     app.add_handler(CallbackQueryHandler(cb_vip,        pattern="^vip$"))
     app.add_handler(CallbackQueryHandler(cb_resultados, pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(cb_about,      pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_inicio,     pattern="^inicio$"))
 
-    # Handler universal de texto fallback
-    async def handle_text_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.message and update.message.text:
-            txt = update.message.text.strip().lower()
-            if txt.startswith("/directo") or txt.startswith("directo") or txt.startswith("/live"):
-                await publicar_directo(update, context)
-            elif txt.startswith("/pick") or txt.startswith("pick"):
-                await publicar_pick(update, context)
+    # Callbacks panel admin
+    app.add_handler(CallbackQueryHandler(cb_admin_menu,      pattern="^admin_menu$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_stats,     pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_publicar,  pattern="^admin_publicar$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_edit_start,pattern="^admin_edit_start$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_broadcast, pattern="^admin_broadcast_info$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_edit_links,pattern="^admin_edit_links$"))
 
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_fallback))
+    # Callbacks submenú publicación
+    app.add_handler(CallbackQueryHandler(cb_pub_tipo, pattern="^pub_"))
 
-    logger.info("[OK] Picks Elite Platform arrancada...")
+    # Manejador de texto (publicaciones y ediciones)
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_input))
+
+    logger.info("[OK] Picks Elite Platform arrancada en modo POLLING...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":

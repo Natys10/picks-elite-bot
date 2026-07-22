@@ -73,6 +73,25 @@ def format_doble_win(partido: str, apuesta1: str, apuesta2: str, cuota1: str = "
         f"🍀 *Picks Élite — Apuesta con cabeza*"
     )
 
+def format_resultado(partido: str, resultado: str, pick1: str, pick2: str = "", detalle: str = "") -> str:
+    pick2_txt = f"\n✅ *{pick2}*" if pick2 else ""
+    detalle_txt = f"\n\n_{detalle}_" if detalle else ""
+    return (
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 *ANÁLISIS POST-PARTIDO*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"⚽ *{partido}*\n"
+        f"🏁 Resultado final: *{resultado}*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *NUESTROS PICKS*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"✅ *{pick1}*{pick2_txt}\n"
+        f"{detalle_txt}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📈 Esto es análisis, no suerte.\n"
+        f"💎 *Picks Élite — Apuesta con cabeza* 🍀"
+    )
+
 def format_loss(partido: str, apuesta: str) -> str:
     return (
         f"🔴 *ROJO EN ESTE PICK* 🔴\n\n"
