@@ -103,8 +103,11 @@ async def send_photo_canal(bot, canal, img_path, caption, keyboard=None):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user:
-        db.registrar_usuario(user.id, user.username, user.first_name)
-        db.log_evento(user.id, "start")
+        try:
+            db.registrar_usuario(user.id, user.username, user.first_name)
+            db.log_evento(user.id, "start")
+        except Exception as e:
+            logger.error(f"[START DB ERROR] {e}")
 
     texto = (
         "✅ *SUSCRIPCIÓN ACTIVADA* ✅\n\n"

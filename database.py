@@ -105,7 +105,15 @@ class Database:
             conn.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (clave, valor))
             conn.commit()
 
-    # --- CAMPAÑAS ---
+    # --- CAMPAÑAS & LOGS ---
+    def log_evento(self, user_id: int, evento: str):
+        try:
+            with self._get_conn() as conn:
+                conn.execute("INSERT INTO logs (user_id, evento) VALUES (?, ?)", (user_id, evento))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[DB] Error al registrar evento {evento}: {e}")
+
     def guardar_campana(self, titulo: str, mensaje: str, enviados: int):
         with self._get_conn() as conn:
             conn.execute("INSERT INTO campanas (titulo, mensaje, enviados) VALUES (?, ?, ?)", (titulo, mensaje, enviados))
