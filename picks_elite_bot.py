@@ -38,6 +38,8 @@ ESPERANDO_LOSS      = 5
 ESPERANDO_RESULTADO = 6
 ESPERANDO_BROADCAST = 7
 ESPERANDO_START_MSG = 8
+ESPERANDO_CUSTOM    = 9
+ESPERANDO_DESTINO_CUSTOM = 10
 
 # Banners por tipo de publicación
 BANNERS = {
@@ -239,6 +241,7 @@ async def cb_admin_publicar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💥 DOS VERDES (2 picks)", callback_data="pub_dwin")],
         [InlineKeyboardButton("📊 Resultado partido", callback_data="pub_resultado")],
         [InlineKeyboardButton("🔴 LOSS",              callback_data="pub_loss")],
+        [InlineKeyboardButton("📝 Publicación Libre", callback_data="pub_custom")],
         *btn_volver_admin(),
     ]
     await query.edit_message_text(
@@ -290,6 +293,13 @@ INSTRUCCIONES = {
         "`partido | apuesta`\n\n"
         "*Ejemplo:*\n"
         "`Toluca vs Pumas | Victoria Toluca`"
+    ),
+    "pub_custom": (
+        ESPERANDO_CUSTOM,
+        "📝 *PUBLICACIÓN LIBRE*\n\n"
+        "Envía o reenvía el mensaje que quieres publicar.\n"
+        "Puede ser un texto, foto, vídeo, GIF o audio.\n\n"
+        "_El bot te preguntará a qué canal enviarlo después._"
     ),
 }
 
@@ -362,21 +372,41 @@ async def cb_admin_edit_links(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 # =============================================
-#   MANEJADOR DE TEXTO ENTRANTE (publicaciones)
+#   MANEJADOR DE ENTRADA (publicaciones y contenido libre)
 # =============================================
-async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text: return
+async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message: return
     uid = update.effective_user.id
     if not admin.is_admin(uid): return
 
     estado = context.user_data.get("pub_estado")
-    text   = update.message.text.strip()
+    
+    # Manejar texto si es texto o tiene caption
+    text = update.message.text or update.message.caption or ""
+    text = text.strip()
 
-    # Cancelar
+    # Cancelar (si es comando de texto)
     if text.lower() in ["/cancelar", "cancelar"]:
         context.user_data.pop("pub_estado", None)
         context.user_data.pop("pub_tipo", None)
+        context.user_data.pop("custom_msg_id", None)
         await update.message.reply_text("❌ Operación cancelada.", reply_markup=get_panel_admin_markup())
+        return
+
+    # NUEVO ESTADO: ESPERANDO_CUSTOM
+    if estado == ESPERANDO_CUSTOM:
+        context.user_data["custom_msg_id"] = update.message.message_id
+        context.user_data["pub_estado"] = ESPERANDO_DESTINO_CUSTOM
+        teclado = [
+            [InlineKeyboardButton("📢 Canal Gratuito", callback_data="dest_gratis")],
+            [InlineKeyboardButton("💎 Canal VIP", callback_data="dest_vip")],
+            [InlineKeyboardButton("🔥 AMBOS Canales", callback_data="dest_ambos")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="admin_publicar")]
+        ]
+        await update.message.reply_text(
+            "✅ Contenido recibido.\n\n¿Dónde quieres publicar este mensaje?",
+            reply_markup=InlineKeyboardMarkup(teclado)
+        )
         return
 
     if estado == ESPERANDO_START_MSG:
@@ -477,6 +507,41 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Error: `{e}`", parse_mode="Markdown")
 
+async def cb_pub_destino(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not admin.is_admin(query.from_user.id): return
+    
+    estado = context.user_data.get("pub_estado")
+    if estado != ESPERANDO_DESTINO_CUSTOM:
+        return
+        
+    destino = query.data
+    msg_id = context.user_data.get("custom_msg_id")
+    
+    if not msg_id:
+        await query.edit_message_text("❌ Error: No se encontró el mensaje a publicar.", reply_markup=get_panel_admin_markup())
+        return
+
+    chat_origen = query.message.chat_id
+    
+    try:
+        if destino == "dest_gratis":
+            await context.bot.copy_message(chat_id=CANAL_ID, from_chat_id=chat_origen, message_id=msg_id)
+            await query.edit_message_text("✅ Publicado en el Canal Gratuito exitosamente.", reply_markup=get_panel_admin_markup())
+        elif destino == "dest_vip":
+            await context.bot.copy_message(chat_id=CANAL_VIP_ID, from_chat_id=chat_origen, message_id=msg_id)
+            await query.edit_message_text("✅ Publicado en el Canal VIP exitosamente.", reply_markup=get_panel_admin_markup())
+        elif destino == "dest_ambos":
+            await context.bot.copy_message(chat_id=CANAL_ID, from_chat_id=chat_origen, message_id=msg_id)
+            await context.bot.copy_message(chat_id=CANAL_VIP_ID, from_chat_id=chat_origen, message_id=msg_id)
+            await query.edit_message_text("✅ Publicado en AMBOS canales exitosamente.", reply_markup=get_panel_admin_markup())
+            
+        context.user_data.pop("pub_estado", None)
+        context.user_data.pop("custom_msg_id", None)
+    except Exception as e:
+        await query.edit_message_text(f"❌ Error al publicar: `{e}`", parse_mode="Markdown", reply_markup=get_panel_admin_markup())
+
 # =============================================
 #   COMANDOS ADMIN ADICIONALES
 # =============================================
@@ -553,9 +618,10 @@ def main():
 
     # Callbacks submenú publicación
     app.add_handler(CallbackQueryHandler(cb_pub_tipo, pattern="^pub_"))
+    app.add_handler(CallbackQueryHandler(cb_pub_destino, pattern="^dest_"))
 
-    # Manejador de texto (publicaciones y ediciones)
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_input))
+    # Manejador general (texto, media, etc.) para publicaciones libres y plantillas
+    app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_admin_input))
 
     logger.info("[OK] Picks Elite Platform arrancada en modo POLLING...")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
