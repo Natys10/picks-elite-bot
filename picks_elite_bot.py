@@ -76,16 +76,6 @@ def get_link_gratis():
 def get_link_vip():
     return db.get_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
 
-def menu_principal():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Acceder al Canal Gratuito", url=get_link_gratis())],
-        [InlineKeyboardButton("💎 Información VIP", callback_data="vip")],
-        [InlineKeyboardButton("📊 Estadísticas", callback_data="resultados"), InlineKeyboardButton("ℹ️ Info", callback_data="about")]
-    ])
-
-def btn_volver_menu():
-    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")]]
-
 def btn_volver_admin():
     return [[InlineKeyboardButton("⬅️ Volver al panel", callback_data="admin_menu")]]
 
@@ -115,11 +105,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = db.get_config("start_text", 
         "👑 *Bienvenido a Picks Élite*\n\n"
-        "Selecciona una opción del menú para comenzar:"
+        "Únete ahora mismo a nuestro Canal Gratuito para ver todos los pronósticos:"
     )
     
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 Acceder al Canal Gratuito", url=get_link_gratis())]
+    ])
+    
     await update.message.reply_text(
-        texto, parse_mode="Markdown", reply_markup=menu_principal()
+        texto, parse_mode="Markdown", reply_markup=teclado
     )
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,11 +155,6 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================
 #   CALLBACKS MENÚ PÚBLICO
 # =============================================
-async def cb_menu_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    texto = "👑 *Bienvenido a Picks Élite*\n\nSelecciona una opción del menú:"
-    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=menu_principal())
 async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -175,50 +164,13 @@ async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Análisis H2H detallado\n"
         "✅ Gestión profesional de bankroll\n"
         "✅ Soporte directo con el analista\n\n"
-        "💰 *Precio: €29 / mes*\n\n"
         "Para suscribirte accede ahora 👇"
     )
     link_admin = db.get_config("link_admin", "https://t.me/TuUsuarioAqui")
     teclado = [
-        [InlineKeyboardButton("💬 Contactar para Pago y Acceso", url=link_admin)],
-        *btn_volver_menu(),
+        [InlineKeyboardButton("💬 Contactar para Pago y Acceso", url=link_admin)]
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
-
-async def cb_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    texto = (
-        "📊 *Nuestros Resultados*\n\n"
-        "Mantenemos un historial 100% transparente en nuestro canal público.\n"
-        "Únete y comprueba los últimos resultados."
-    )
-    teclado = [
-        [InlineKeyboardButton("📢 Ver en el Canal Gratuito", url=get_link_gratis())],
-        *btn_volver_menu()
-    ]
-    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
-
-async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    texto = (
-        "ℹ️ *Sobre Picks Élite*\n\n"
-        "Somos un equipo de analistas enfocados en mercados líquidos y líneas de valor.\n"
-        "Trabajamos con estadística avanzada para rentabilizar a largo plazo."
-    )
-    teclado = btn_volver_menu()
-    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
-
-async def cb_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    start_text = db.get_config("start_text")
-    try:
-        await query.edit_message_text(start_text, parse_mode="Markdown", reply_markup=menu_principal())
-    except Exception:
-        await query.message.reply_text(start_text, parse_mode="Markdown", reply_markup=menu_principal())
-
 # =============================================
 #   PANEL DE ADMINISTRACIÓN
 # =============================================
@@ -635,9 +587,6 @@ def main():
     from telegram.ext import ChatJoinRequestHandler
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
     app.add_handler(CallbackQueryHandler(cb_vip,        pattern="^vip$"))
-    app.add_handler(CallbackQueryHandler(cb_resultados, pattern="^resultados$"))
-    app.add_handler(CallbackQueryHandler(cb_about,      pattern="^about$"))
-    app.add_handler(CallbackQueryHandler(cb_inicio,     pattern="^inicio$"))
 
     # Admin comandos directos
     app.add_handler(CommandHandler("admin",  cmd_admin))
