@@ -114,17 +114,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"[START DB ERROR] {e}")
 
     texto = db.get_config("start_text", 
-        "✅ *Suscripción Premium Activada* ✅\n\n"
-        "Entra ahora para ver el pronóstico gratis de hoy ⬇️"
+        "✅ *SUSCRIPCIÓN ACTIVA* ✅\n\n"
+        "Picks Élite Bienvenido a mi canal 😉\n"
+        "Canal número 1 de España 🇪🇸, con +97% de tasa de acierto ✅\n\n"
+        "Activa tu SUSCRIPCIÓN PREMIUM GRATIS AHORA y disfruta de todas las apuestas, retos y combinadas\n\n"
+        "Oferta sólo válida los próximos 30 minutos. ⏳"
     )
-    # Botón inicial de atrape
+    
     teclado_inicio = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ENTRAR AHORA ↗️", callback_data="menu_inicio")]
+        [InlineKeyboardButton("ACTIVA GRATIS TU SUSCRIPCIÓN AQUÍ ↗️", url=get_link_gratis())]
     ])
     
     await update.message.reply_text(
         texto, parse_mode="Markdown", reply_markup=teclado_inicio
     )
+
+async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Aprueba automáticamente las solicitudes de unión al canal"""
+    request = update.chat_join_request
+    try:
+        await request.approve()
+        # Registramos al usuario si no estaba
+        user = request.from_user
+        db.registrar_usuario(user.id, user.username, user.first_name)
+    except Exception as e:
+        logger.error(f"Error aprobando solicitud: {e}")
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -590,6 +604,7 @@ async def post_init(application: Application):
     await application.bot.delete_my_commands()
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
+        BotCommand("admin",  "Panel de administración"),
     ])
     # Forzar siempre el link correcto (por si Railway tiene el viejo en su BD)
     db.set_config("link_vip",    "https://t.me/+ldrgDvLiC5NhOTRk")
@@ -604,7 +619,8 @@ def main():
     # Público
     app.add_handler(CommandHandler("start",  start))
     app.add_handler(CommandHandler("id",     get_id))
-    app.add_handler(CallbackQueryHandler(cb_menu_inicio, pattern="^menu_inicio$"))
+    from telegram.ext import ChatJoinRequestHandler
+    app.add_handler(ChatJoinRequestHandler(handle_join_request))
     app.add_handler(CallbackQueryHandler(cb_vip,        pattern="^vip$"))
     app.add_handler(CallbackQueryHandler(cb_resultados, pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(cb_about,      pattern="^about$"))
