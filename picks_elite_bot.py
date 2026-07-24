@@ -78,7 +78,9 @@ def get_link_vip():
 
 def menu_principal():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("ENTRAR AHORA ↗️", url=get_link_gratis())]
+        [InlineKeyboardButton("📢 Acceder al Canal Gratuito", url=get_link_gratis())],
+        [InlineKeyboardButton("💎 Información VIP", callback_data="vip")],
+        [InlineKeyboardButton("📊 Estadísticas", callback_data="resultados"), InlineKeyboardButton("ℹ️ Info", callback_data="about")]
     ])
 
 def btn_volver_admin():
@@ -138,8 +140,9 @@ async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💰 *Precio: €29 / mes*\n\n"
         "Para suscribirte accede ahora 👇"
     )
+    link_admin = db.get_config("link_admin", "https://t.me/TuUsuarioAqui")
     teclado = [
-        [InlineKeyboardButton("💎 Acceder al Canal VIP", url=get_link_vip())],
+        [InlineKeyboardButton("💬 Contactar para Pago y Acceso", url=link_admin)],
         *btn_volver_menu(),
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
@@ -568,8 +571,11 @@ async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif tipo == "vip":
         db.set_config("link_vip", url)
         await update.message.reply_text(f"✅ Link canal VIP actualizado: `{url}`", parse_mode="Markdown")
+    elif tipo == "admin":
+        db.set_config("link_admin", url)
+        await update.message.reply_text(f"✅ Link de Administrador actualizado: `{url}`", parse_mode="Markdown")
     else:
-        await update.message.reply_text("Tipo inválido. Usa `gratis` o `vip`.", parse_mode="Markdown")
+        await update.message.reply_text("Tipo inválido. Usa `gratis`, `vip` o `admin`.", parse_mode="Markdown")
 
 # =============================================
 #   ARRANQUE
@@ -580,8 +586,6 @@ async def post_init(application: Application):
     await application.bot.delete_my_commands()
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
-        BotCommand("admin",  "Panel de administración"),
-        BotCommand("stats",  "Ver estadísticas"),
     ])
     # Forzar siempre el link correcto (por si Railway tiene el viejo en su BD)
     db.set_config("link_vip",    "https://t.me/+ldrgDvLiC5NhOTRk")
