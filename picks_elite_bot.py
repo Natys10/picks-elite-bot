@@ -83,11 +83,11 @@ def menu_principal():
         [InlineKeyboardButton("📊 Estadísticas", callback_data="resultados"), InlineKeyboardButton("ℹ️ Info", callback_data="about")]
     ])
 
+def btn_volver_menu():
+    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="menu_inicio")]]
+
 def btn_volver_admin():
     return [[InlineKeyboardButton("⬅️ Volver al panel", callback_data="admin_menu")]]
-
-def btn_volver_menu():
-    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")]]
 
 async def send_photo_canal(bot, canal, img_path, caption, keyboard=None):
     """Envía imagen+caption al canal dado."""
@@ -113,12 +113,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"[START DB ERROR] {e}")
 
-    texto = (
+    texto = db.get_config("start_text", 
         "✅ *Suscripción Premium Activada* ✅\n\n"
         "Entra ahora para ver el pronóstico gratis de hoy ⬇️"
     )
+    # Botón inicial de atrape
+    teclado_inicio = InlineKeyboardMarkup([
+        [InlineKeyboardButton("ENTRAR AHORA ↗️", callback_data="menu_inicio")]
+    ])
+    
     await update.message.reply_text(
-        texto, parse_mode="Markdown", reply_markup=menu_principal()
+        texto, parse_mode="Markdown", reply_markup=teclado_inicio
     )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,6 +133,11 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =============================================
 #   CALLBACKS MENÚ PÚBLICO
 # =============================================
+async def cb_menu_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    texto = "👑 *Bienvenido a Picks Élite*\n\nSelecciona una opción del menú:"
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=menu_principal())
 async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -150,16 +160,14 @@ async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cb_resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    st = db.get_stats()
     texto = (
-        "📊 *Historial de Resultados*\n\n"
-        f"✅ Picks acertados: `{st.get('wins', 0)}`\n"
-        f"❌ Picks fallados: `{st.get('losses', 0)}`\n\n"
-        "_Resultados actualizados en tiempo real._"
+        "📊 *Nuestros Resultados*\n\n"
+        "Mantenemos un historial 100% transparente en nuestro canal público.\n"
+        "Únete y comprueba los últimos resultados."
     )
     teclado = [
-        [InlineKeyboardButton("📢 Ver canal gratuito", url=get_link_gratis())],
-        *btn_volver_menu(),
+        [InlineKeyboardButton("📢 Ver en el Canal Gratuito", url=get_link_gratis())],
+        *btn_volver_menu()
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
@@ -168,14 +176,10 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     texto = (
         "ℹ️ *Sobre Picks Élite*\n\n"
-        "Canal de pronósticos con enfoque *100% estadístico y analítico*.\n\n"
-        "📌 Canal gratuito: @PicksElitePro\n"
-        "💎 Canal VIP: Solo para suscriptores"
+        "Somos un equipo de analistas enfocados en mercados líquidos y líneas de valor.\n"
+        "Trabajamos con estadística avanzada para rentabilizar a largo plazo."
     )
-    teclado = [
-        [InlineKeyboardButton("📢 Unirse gratis", url=get_link_gratis())],
-        *btn_volver_menu(),
-    ]
+    teclado = btn_volver_menu()
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
 async def cb_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -600,13 +604,7 @@ def main():
     # Público
     app.add_handler(CommandHandler("start",  start))
     app.add_handler(CommandHandler("id",     get_id))
-
-    # Admin comandos directos
-    app.add_handler(CommandHandler("admin",  cmd_admin))
-    app.add_handler(CommandHandler("stats",  cmd_stats))
-    app.add_handler(CommandHandler("setlink", cmd_setlink))
-
-    # Callbacks menú público
+    app.add_handler(CallbackQueryHandler(cb_menu_inicio, pattern="^menu_inicio$"))
     app.add_handler(CallbackQueryHandler(cb_vip,        pattern="^vip$"))
     app.add_handler(CallbackQueryHandler(cb_resultados, pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(cb_about,      pattern="^about$"))
