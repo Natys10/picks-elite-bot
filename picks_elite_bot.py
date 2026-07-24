@@ -114,31 +114,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"[START DB ERROR] {e}")
 
     texto = db.get_config("start_text", 
-        "✅ *SUSCRIPCIÓN ACTIVA* ✅\n\n"
-        "Picks Élite Bienvenido a mi canal 😉\n"
-        "Canal número 1 de España 🇪🇸, con +97% de tasa de acierto ✅\n\n"
-        "Activa tu SUSCRIPCIÓN PREMIUM GRATIS AHORA y disfruta de todas las apuestas, retos y combinadas\n\n"
-        "Oferta sólo válida los próximos 30 minutos. ⏳"
+        "👑 *Bienvenido a Picks Élite*\n\n"
+        "Selecciona una opción del menú para comenzar:"
     )
     
-    teclado_inicio = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ACTIVA GRATIS TU SUSCRIPCIÓN AQUÍ ↗️", url=get_link_gratis())]
-    ])
-    
     await update.message.reply_text(
-        texto, parse_mode="Markdown", reply_markup=teclado_inicio
+        texto, parse_mode="Markdown", reply_markup=menu_principal()
     )
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Aprueba automáticamente las solicitudes de unión al canal"""
+    """Aprueba automáticamente las solicitudes de unión al canal y envía mensaje de bienvenida"""
     request = update.chat_join_request
     try:
         await request.approve()
-        # Registramos al usuario si no estaba
+        
+        # Registrar al usuario
         user = request.from_user
         db.registrar_usuario(user.id, user.username, user.first_name)
+        
+        # Enviar mensaje automático por privado (como en la captura 3)
+        msg_bienvenida = (
+            "✅ *¡Solicitud Aprobada!*\n\n"
+            "Ya estás dentro de nuestro **Canal Gratuito**.\n"
+            "Prepárate para recibir los mejores picks estadísticos del mercado.\n\n"
+            "¿Quieres llevar tu bankroll al siguiente nivel?\n"
+            "Únete a nuestro **Canal VIP** hoy mismo."
+        )
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 Información VIP", callback_data="vip")]
+        ])
+        
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=msg_bienvenida,
+            parse_mode="Markdown",
+            reply_markup=teclado
+        )
+        
     except Exception as e:
-        logger.error(f"Error aprobando solicitud: {e}")
+        logger.error(f"Error en join request: {e}")
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
