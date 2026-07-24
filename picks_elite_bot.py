@@ -84,7 +84,7 @@ def menu_principal():
     ])
 
 def btn_volver_menu():
-    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="menu_inicio")]]
+    return [[InlineKeyboardButton("⬅️ Volver al menú", callback_data="inicio")]]
 
 def btn_volver_admin():
     return [[InlineKeyboardButton("⬅️ Volver al panel", callback_data="admin_menu")]]
@@ -618,7 +618,6 @@ async def post_init(application: Application):
     await application.bot.delete_my_commands()
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
-        BotCommand("admin",  "Panel de administración"),
     ])
     # Forzar siempre el link correcto (por si Railway tiene el viejo en su BD)
     db.set_config("link_vip",    "https://t.me/+ldrgDvLiC5NhOTRk")
@@ -639,6 +638,11 @@ def main():
     app.add_handler(CallbackQueryHandler(cb_resultados, pattern="^resultados$"))
     app.add_handler(CallbackQueryHandler(cb_about,      pattern="^about$"))
     app.add_handler(CallbackQueryHandler(cb_inicio,     pattern="^inicio$"))
+
+    # Admin comandos directos
+    app.add_handler(CommandHandler("admin",  cmd_admin))
+    app.add_handler(CommandHandler("stats",  cmd_stats))
+    app.add_handler(CommandHandler("setlink", cmd_setlink))
 
     # Callbacks panel admin
     app.add_handler(CallbackQueryHandler(cb_admin_menu,      pattern="^admin_menu$"))
