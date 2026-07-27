@@ -8,12 +8,12 @@ TOKEN = os.environ.get("BOT_TOKEN", "8915840915:AAFWX7lh3wxO3QKWutoCMdYB7l-TcJ5a
 ADMIN_ID = 8516113803
 
 valor = os.environ.get("CANAL_ID")
-print(f"[DEBUG CONFIG] CANAL_ID en os.environ: {valor}")
 
 if valor is None:
-    raise RuntimeError("\n❌ ERROR CRÍTICO: La variable de entorno CANAL_ID no está configurada.\nDebes configurarla en Railway con el ID numérico real del canal privado.\nEl bot no puede iniciar.\n")
-    
-CANAL_ID = int(valor)
+    print("⚠️ CANAL_ID no configurado. Se usará -1 temporalmente.")
+    CANAL_ID = -1
+else:
+    CANAL_ID = int(valor)
 
 CANAL_VIP_ID = int(os.environ.get("CANAL_VIP_ID", -1004381972016)) # Canal VIP (privado)
 
