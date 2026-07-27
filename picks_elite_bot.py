@@ -71,10 +71,16 @@ def run_health_check():
 #   HELPERS
 # =============================================
 def get_link_gratis():
-    return db.get_config("link_gratis", "https://t.me/PicksElitePro")
+    link = db.get_config("link_gratis", "")
+    if not link:
+        raise ValueError("No existe link_gratis configurado en la base de datos. Genera un enlace reenviando un mensaje del canal al bot o usando /setlink gratis.")
+    return link
 
 def get_link_vip():
-    return db.get_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
+    link = db.get_config("link_vip", "")
+    if not link:
+        raise ValueError("No existe link_vip configurado en la base de datos.")
+    return link
 
 def btn_volver_welcome():
     return [[InlineKeyboardButton("⬅️ Atrás", callback_data="welcome_back")]]
@@ -106,14 +112,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"[START DB ERROR] {e}")
 
+    logger.info(f"[START USER] {user.id} ({user.username}) ha iniciado el bot.")
+
     texto = db.get_config("start_text", 
         "👑 *Bienvenido a Picks Élite*\n\n"
         "Únete ahora mismo a nuestro Canal Gratuito para ver todos los pronósticos:"
     )
     
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Acceder", url=get_link_gratis())]
-    ])
+    try:
+        link = get_link_gratis()
+        logger.info(f"[LINK ENVIADO AL USUARIO {user.id}] {link}")
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Acceder", url=link)]
+        ])
+    except ValueError as e:
+        logger.error(f"[START ERROR] {e}")
+        await update.message.reply_text("⚠️ El bot no está configurado correctamente. Faltan los enlaces de acceso.")
+        return
     
     await update.message.reply_text(
         texto, parse_mode="Markdown", reply_markup=teclado
@@ -122,11 +137,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Aprueba automáticamente las solicitudes de unión al canal y envía mensaje de bienvenida"""
     request = update.chat_join_request
+    if not request:
+        logger.error("[JOIN REQUEST ERROR] No se recibió chat_join_request.")
+        return
+        
+    user = request.from_user
+    logger.info(f"[JOIN REQUEST RECIBIDO] Usuario {user.id} ({user.username}) solicitó unirse al canal {request.chat.id}")
+    
     try:
         await request.approve()
+        logger.info(f"[APPROVE EJECUTADO] Usuario {user.id} aprobado correctamente.")
         
         # Registrar al usuario
-        user = request.from_user
         db.registrar_usuario(user.id, user.username, user.first_name)
         
         # Enviar mensaje automático por privado (como en la captura 3)
@@ -137,9 +159,18 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             "Desde aquí podrás acceder a todos nuestros servicios.\n\n"
             "Selecciona una opción:"
         )
+        
+        try:
+            link_vip = get_link_vip()
+        except ValueError:
+            link_vip = "https://t.me/ErrorVIP"
+            logger.warning("Falta link_vip para el mensaje de bienvenida.")
+            
+        link_soporte = db.get_config("link_soporte", "https://t.me/Soporte")
+            
         teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔒 Canal VIP", url=db.get_config("link_vip", "https://t.me/TuVIP"))],
-            [InlineKeyboardButton("🎧 Soporte", url=db.get_config("link_soporte", "https://t.me/TuSoporte"))],
+            [InlineKeyboardButton("🔒 Canal VIP", url=link_vip)],
+            [InlineKeyboardButton("🎧 Soporte", url=link_soporte)],
             [InlineKeyboardButton("📚 Guía para empezar", callback_data="guia")]
         ])
         
@@ -149,9 +180,11 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown",
             reply_markup=teclado
         )
+        logger.info(f"[MENSAJE PRIVADO ENVIADO] Bienvenida enviada al usuario {user.id}.")
         
     except Exception as e:
-        logger.error(f"Error en join request: {e}")
+        import traceback
+        logger.error(f"[ERROR EN JOIN REQUEST] {e}\nTraceback completo:\n{traceback.format_exc()}")
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -603,25 +636,33 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not admin.is_admin(update.effective_user.id): return
-    if len(context.args) < 2:
-        await update.message.reply_text("Uso: `/setlink gratis|vip https://t.me/...`", parse_mode="Markdown")
+    if not admin.is_admin(update.effective_user.id):
         return
-    tipo, url = context.args[0].lower(), context.args[1]
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("Uso: `/setlink [gratis|vip|admin|soporte] [URL]`", parse_mode="Markdown")
+        return
+    tipo = args[0].lower()
+    url = args[1]
+    
+    if not url.startswith("https://t.me/"):
+        await update.message.reply_text("❌ Error: La URL debe comenzar con `https://t.me/`", parse_mode="Markdown")
+        return
+
     if tipo == "gratis":
         db.set_config("link_gratis", url)
         await update.message.reply_text(f"✅ Link canal gratuito actualizado: `{url}`", parse_mode="Markdown")
     elif tipo == "vip":
         db.set_config("link_vip", url)
         await update.message.reply_text(f"✅ Link canal VIP actualizado: `{url}`", parse_mode="Markdown")
-    elif tipo == "soporte":
-        db.set_config("link_soporte", url)
-        await update.message.reply_text(f"✅ Link de Soporte actualizado: `{url}`", parse_mode="Markdown")
     elif tipo == "admin":
         db.set_config("link_admin", url)
         await update.message.reply_text(f"✅ Link de Administrador actualizado: `{url}`", parse_mode="Markdown")
+    elif tipo == "soporte":
+        db.set_config("link_soporte", url)
+        await update.message.reply_text(f"✅ Link de Soporte actualizado: `{url}`", parse_mode="Markdown")
     else:
-        await update.message.reply_text("Tipo inválido. Usa `gratis`, `vip` o `admin`.", parse_mode="Markdown")
+        await update.message.reply_text("Tipo inválido. Usa `gratis`, `vip`, `admin` o `soporte`.", parse_mode="Markdown")
 
 # =============================================
 #   ARRANQUE
@@ -633,9 +674,6 @@ async def post_init(application: Application):
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
     ])
-    # Forzar siempre el link correcto (por si Railway tiene el viejo en su BD)
-    db.set_config("link_vip",    "https://t.me/+ldrgDvLiC5NhOTRk")
-    db.set_config("link_gratis", "https://t.me/PicksElitePro")
     logger.info("[OK] Picks Elite Platform v4.0 lista.")
 
 def main():

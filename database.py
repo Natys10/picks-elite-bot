@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from config import DB_PATH, DEFAULT_START_TEXT, LINK_CANAL_GRATUITO, LINK_CANAL_VIP
+from config import DB_PATH, DEFAULT_START_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,7 @@ class Database:
 
             # Valores por defecto en configuracion si no existen
             conn.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('start_text', ?)", (DEFAULT_START_TEXT,))
-            conn.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('link_gratis', ?)", (LINK_CANAL_GRATUITO,))
-            conn.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('link_vip', ?)", (LINK_CANAL_VIP,))
+            # Eliminados los enlaces hardcodeados por defecto (ahora se crearán vía Join Request o /setlink)
 
             conn.commit()
         logger.info("[DB] Base de datos y configuracion inicializadas.")

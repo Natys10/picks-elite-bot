@@ -6,10 +6,8 @@ import os
 
 TOKEN = os.environ.get("BOT_TOKEN", "8915840915:AAFWX7lh3wxO3QKWutoCMdYB7l-TcJ5aQJQ")
 ADMIN_ID = 8516113803
-CANAL_ID     = "@PicksElitePro"          # Canal gratuito
-CANAL_VIP_ID = -1004381972016            # Canal VIP (privado)
-LINK_CANAL_GRATUITO = "https://t.me/PicksElitePro"
-LINK_CANAL_VIP = "https://t.me/+ldrgDvLiC5NhOTRk"
+CANAL_ID     = int(os.environ.get("CANAL_ID", -1000000000000)) # ID NUMÉRICO ESTRICTO (Ej: -100123456)
+CANAL_VIP_ID = int(os.environ.get("CANAL_VIP_ID", -1004381972016)) # Canal VIP (privado)
 
 DB_PATH = os.environ.get("DB_PATH", "picks_elite.db")
 
