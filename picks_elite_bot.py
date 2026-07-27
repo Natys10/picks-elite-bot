@@ -634,6 +634,32 @@ def main():
     app.add_handler(CommandHandler("stats",  cmd_stats))
     app.add_handler(CommandHandler("setlink", cmd_setlink))
 
+    # Auto-generador de enlaces mágicos al reenviar mensaje del canal
+    async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not admin.is_admin(update.effective_user.id): return
+        if not update.message.forward_origin: return
+        try:
+            chat_id = update.message.forward_origin.chat.id
+            # Crear el enlace mágico con aprobación
+            new_link = await context.bot.create_chat_invite_link(
+                chat_id=chat_id,
+                name="Embudo Picks Elite",
+                creates_join_request=True
+            )
+            # Guardarlo en la base de datos
+            db.set_config("link_gratis", new_link.invite_link)
+            await update.message.reply_text(
+                f"✅ **¡MAGIA COMPLETADA!**\n\n"
+                f"He detectado tu canal privado, he generado el enlace de Aprobación automáticamente y lo he conectado al botón.\n\n"
+                f"Enlace generado: `{new_link.invite_link}`\n\n"
+                f"Ve a tu otra cuenta y toca '🚀 Acceder'. ¡Ya funciona al 100%!",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error creando enlace. Asegúrate de que el bot sea Administrador en el canal con permiso para Invitar Usuarios. Detalles: {e}")
+
+    app.add_handler(MessageHandler(filters.FORWARDED, handle_forward))
+
     # Callbacks panel admin
     app.add_handler(CallbackQueryHandler(cb_admin_menu,      pattern="^admin_menu$"))
     app.add_handler(CallbackQueryHandler(cb_admin_stats,     pattern="^admin_stats$"))
