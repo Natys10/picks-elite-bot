@@ -682,10 +682,11 @@ async def post_init(application: Application):
     logger.info(f"[DIAG] CANAL_ID en uso: {CANAL_ID}")
     
     link_actual = db.get_config("link_gratis", "")
-    if link_actual:
+    if link_actual and link_actual != "https://t.me/PicksElitePro" and not link_actual.endswith("PicksElitePro"):
         logger.info(f"[DIAG] Enlace en SQLite validado: {link_actual}")
     else:
-        logger.warning("[DIAG] SQLite vacío (Posible borrado efímero de Railway). Intentando autogenerar...")
+        logger.warning("[DIAG] Enlace inválido o SQLite vacío. Vaciando registro y autogenerando uno privado...")
+        db.set_config("link_gratis", "") # Vaciar completamente el registro defectuoso
         try:
             # 1. Comprobar si el bot ve el canal
             chat = await application.bot.get_chat(CANAL_ID)
