@@ -674,6 +674,67 @@ async def post_init(application: Application):
     await application.bot.set_my_commands([
         BotCommand("start",  "Abrir menú principal"),
     ])
+    
+    # --- AUTODIAGNÓSTICO Y REPARACIÓN ---
+    logger.info("======================================")
+    logger.info("   INICIANDO AUTODIAGNÓSTICO DE RED   ")
+    logger.info("======================================")
+    logger.info(f"[DIAG] CANAL_ID en uso: {CANAL_ID}")
+    
+    link_actual = db.get_config("link_gratis", "")
+    if link_actual:
+        logger.info(f"[DIAG] Enlace en SQLite validado: {link_actual}")
+    else:
+        logger.warning("[DIAG] SQLite vacío (Posible borrado efímero de Railway). Intentando autogenerar...")
+        try:
+            # 1. Comprobar si el bot ve el canal
+            chat = await application.bot.get_chat(CANAL_ID)
+            logger.info(f"[DIAG] Acceso al canal confirmado: {chat.title}")
+            
+            # 2. Comprobar permisos del bot
+            member = await application.bot.get_chat_member(CANAL_ID, application.bot.id)
+            if member.status in ['administrator', 'creator'] and member.can_invite_users:
+                logger.info("[DIAG] Permiso can_invite_users OK.")
+            else:
+                logger.error("[DIAG] El bot NO tiene permiso para invitar usuarios en el canal.")
+            
+            # 3. Intentar crear enlace
+            new_link = await application.bot.create_chat_invite_link(
+                chat_id=CANAL_ID,
+                name="Embudo Auto-Reparado",
+                creates_join_request=True
+            )
+            logger.info(f"[DIAG] Enlace creado exitosamente: {new_link.invite_link}")
+            
+            # 4. Guardar en SQLite y notificar
+            db.set_config("link_gratis", new_link.invite_link)
+            
+            try:
+                await application.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"🔧 **Autodiagnóstico completado**\n\nHe generado un nuevo enlace porque SQLite estaba vacío:\n`{new_link.invite_link}`\n\nPuedes probar el botón 🚀 Acceder ahora mismo.",
+                    parse_mode="Markdown"
+                )
+            except Exception as e_msg:
+                logger.warning(f"[DIAG] No se pudo enviar mensaje al ADMIN_ID: {e_msg}")
+                
+        except Exception as e:
+            import traceback
+            logger.error("======================================")
+            logger.error("[ERROR CRÍTICO] LA API DE TELEGRAM RECHAZÓ LA CREACIÓN DEL ENLACE:")
+            logger.error(str(e))
+            logger.error(traceback.format_exc())
+            logger.error("======================================")
+            
+            try:
+                await application.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"❌ **FALLO CRÍTICO EN AUTODIAGNÓSTICO**\n\nTelegram ha bloqueado la creación del enlace. Error exacto:\n`{str(e)}`\n\nRevisa los permisos del bot o si el CANAL_ID (`{CANAL_ID}`) es el correcto.",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+
     logger.info("[OK] Picks Elite Platform v4.0 lista.")
 
 def main():
