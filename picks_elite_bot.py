@@ -131,14 +131,16 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Enviar mensaje automático por privado (como en la captura 3)
         msg_bienvenida = (
-            "✅ *¡Solicitud Aprobada!*\n\n"
-            "Ya estás dentro de nuestro **Canal Gratuito**.\n"
-            "Prepárate para recibir los mejores picks estadísticos del mercado.\n\n"
-            "¿Qué quieres hacer ahora?"
+            "🏆 ¡Bienvenido a Picks Élite!\n\n"
+            "Tu solicitud ha sido aprobada correctamente. ✅\n\n"
+            "Ya formas parte de nuestra comunidad oficial.\n"
+            "Desde aquí podrás acceder a todos nuestros servicios.\n\n"
+            "Selecciona una opción:"
         )
         teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔒 Acceder al VIP", callback_data="vip")],
-            [InlineKeyboardButton("🎧 Soporte", callback_data="soporte")]
+            [InlineKeyboardButton("🔒 Canal VIP", url=db.get_config("link_vip", "https://t.me/TuVIP"))],
+            [InlineKeyboardButton("🎧 Soporte", url=db.get_config("link_soporte", "https://t.me/TuSoporte"))],
+            [InlineKeyboardButton("📚 Guía para empezar", callback_data="guia")]
         ])
         
         await context.bot.send_message(
@@ -194,18 +196,38 @@ async def cb_soporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
+async def cb_guia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    texto = (
+        "🏆 GUÍA RÁPIDA\n\n"
+        "Bienvenido a Picks Élite.\n\n"
+        "Te recomendamos seguir estos pasos:\n\n"
+        "1. Revisa diariamente el canal gratuito.\n"
+        "2. Activa las notificaciones.\n"
+        "3. Gestiona correctamente tu banca.\n"
+        "4. Si deseas contenido exclusivo accede al Canal VIP.\n"
+        "5. Si tienes dudas utiliza el botón Soporte."
+    )
+    teclado = [
+        [InlineKeyboardButton("⬅️ Volver", callback_data="welcome_back")]
+    ]
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
+
 async def cb_welcome_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     texto = (
-        "✅ *¡Solicitud Aprobada!*\n\n"
-        "Ya estás dentro de nuestro **Canal Gratuito**.\n"
-        "Prepárate para recibir los mejores picks estadísticos del mercado.\n\n"
-        "¿Qué quieres hacer ahora?"
+        "🏆 ¡Bienvenido a Picks Élite!\n\n"
+        "Tu solicitud ha sido aprobada correctamente. ✅\n\n"
+        "Ya formas parte de nuestra comunidad oficial.\n"
+        "Desde aquí podrás acceder a todos nuestros servicios.\n\n"
+        "Selecciona una opción:"
     )
     teclado = [
-        [InlineKeyboardButton("🔒 Acceder al VIP", callback_data="vip")],
-        [InlineKeyboardButton("🎧 Soporte", callback_data="soporte")]
+        [InlineKeyboardButton("🔒 Canal VIP", url=db.get_config("link_vip", "https://t.me/TuVIP"))],
+        [InlineKeyboardButton("🎧 Soporte", url=db.get_config("link_soporte", "https://t.me/TuSoporte"))],
+        [InlineKeyboardButton("📚 Guía para empezar", callback_data="guia")]
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 # =============================================
@@ -626,8 +648,9 @@ def main():
     app.add_handler(CommandHandler("id",     get_id))
     from telegram.ext import ChatJoinRequestHandler
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
-    app.add_handler(CallbackQueryHandler(cb_vip,          pattern="^vip$"))
-    app.add_handler(CallbackQueryHandler(cb_soporte,      pattern="^soporte$"))
+    # app.add_handler(CallbackQueryHandler(cb_vip,          pattern="^vip$"))
+    # app.add_handler(CallbackQueryHandler(cb_soporte,      pattern="^soporte$"))
+    app.add_handler(CallbackQueryHandler(cb_guia,         pattern="^guia$"))
     app.add_handler(CallbackQueryHandler(cb_welcome_back, pattern="^welcome_back$"))
     # Admin comandos directos
     app.add_handler(CommandHandler("admin",  cmd_admin))
