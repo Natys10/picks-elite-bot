@@ -635,6 +635,10 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+async def cmd_canalid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not admin.is_admin(update.effective_user.id): return
+    await update.message.reply_text("Para obtener tu CANAL_ID, simplemente **reenvía cualquier mensaje de tu canal privado a este chat**.", parse_mode="Markdown")
+
 async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id):
         return
@@ -756,30 +760,47 @@ def main():
     app.add_handler(CommandHandler("admin",  cmd_admin))
     app.add_handler(CommandHandler("stats",  cmd_stats))
     app.add_handler(CommandHandler("setlink", cmd_setlink))
+    app.add_handler(CommandHandler("canalid", cmd_canalid))
 
     # Auto-generador de enlaces mágicos al reenviar mensaje del canal
     async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admin.is_admin(update.effective_user.id): return
         if not update.message.forward_origin: return
+        
         try:
-            chat_id = update.message.forward_origin.chat.id
-            # Crear el enlace mágico con aprobación
+            # 1. Detectar el chat.id del canal
+            chat = getattr(update.message.forward_origin, 'chat', None)
+            if not chat:
+                chat = getattr(update.message.forward_origin, 'sender_chat', None)
+                
+            if not chat:
+                await update.message.reply_text("❌ No pude detectar el ID del canal. Asegúrate de que el mensaje es realmente un reenvío desde el canal privado.")
+                return
+                
+            real_id = chat.id
+
+            # 2. Crear automáticamente el enlace
             new_link = await context.bot.create_chat_invite_link(
-                chat_id=chat_id,
-                name="Embudo Picks Elite",
+                chat_id=real_id,
+                name="Embudo Picks Elite (Auto)",
                 creates_join_request=True
             )
-            # Guardarlo en la base de datos
+            
+            # 3. Guardar ese enlace en SQLite como link_gratis
             db.set_config("link_gratis", new_link.invite_link)
-            await update.message.reply_text(
-                f"✅ **¡MAGIA COMPLETADA!**\n\n"
-                f"He detectado tu canal privado, he generado el enlace de Aprobación automáticamente y lo he conectado al botón.\n\n"
-                f"Enlace generado: `{new_link.invite_link}`\n\n"
-                f"Ve a tu otra cuenta y toca '🚀 Acceder'. ¡Ya funciona al 100%!",
-                parse_mode="Markdown"
+            
+            # 4. Responder con la confirmación estructurada
+            respuesta = (
+                f"✅ **FLUJO AUTOMÁTICO COMPLETADO**\n\n"
+                f"📡 **CANAL_ID detectado:** `{real_id}`\n"
+                f"🔗 **Enlace generado:** `{new_link.invite_link}`\n"
+                f"💾 **Estado:** Guardado correctamente en SQLite como `link_gratis`.\n\n"
+                f"💡 Si este ID es diferente al que tienes en Railway, asegúrate de actualizar la variable `CANAL_ID` allí para que el autodiagnóstico no falle al reiniciar."
             )
+            await update.message.reply_text(respuesta, parse_mode="Markdown")
+            
         except Exception as e:
-            await update.message.reply_text(f"❌ Error creando enlace. Asegúrate de que el bot sea Administrador en el canal con permiso para Invitar Usuarios. Detalles: {e}")
+            await update.message.reply_text(f"⚠️ **Detecté el canal (`{getattr(chat, 'id', 'Desconocido')}`)**, pero fallé al crear el enlace.\n\nError de Telegram: `{e}`\n\n¿Es el bot Administrador con permiso de invitar usuarios?", parse_mode="Markdown")
 
     app.add_handler(MessageHandler(filters.FORWARDED, handle_forward))
 
