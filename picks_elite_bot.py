@@ -76,6 +76,9 @@ def get_link_gratis():
 def get_link_vip():
     return db.get_config("link_vip", "https://t.me/+ldrgDvLiC5NhOTRk")
 
+def btn_volver_welcome():
+    return [[InlineKeyboardButton("⬅️ Atrás", callback_data="welcome_back")]]
+
 def btn_volver_admin():
     return [[InlineKeyboardButton("⬅️ Volver al panel", callback_data="admin_menu")]]
 
@@ -109,7 +112,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Acceder al Canal Gratuito", url=get_link_gratis())]
+        [InlineKeyboardButton("🚀 Acceder", url=get_link_gratis())]
     ])
     
     await update.message.reply_text(
@@ -131,11 +134,11 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             "✅ *¡Solicitud Aprobada!*\n\n"
             "Ya estás dentro de nuestro **Canal Gratuito**.\n"
             "Prepárate para recibir los mejores picks estadísticos del mercado.\n\n"
-            "¿Quieres llevar tu bankroll al siguiente nivel?\n"
-            "Únete a nuestro **Canal VIP** hoy mismo."
+            "¿Qué quieres hacer ahora?"
         )
         teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Información VIP", callback_data="vip")]
+            [InlineKeyboardButton("🔒 Acceder al VIP", callback_data="vip")],
+            [InlineKeyboardButton("🎧 Soporte", callback_data="soporte")]
         ])
         
         await context.bot.send_message(
@@ -168,7 +171,41 @@ async def cb_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     link_admin = db.get_config("link_admin", "https://t.me/TuUsuarioAqui")
     teclado = [
-        [InlineKeyboardButton("💬 Contactar para Pago y Acceso", url=link_admin)]
+        [InlineKeyboardButton("💬 Contactar para Pago y Acceso", url=link_admin)],
+        *btn_volver_welcome()
+    ]
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
+
+async def cb_soporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    texto = (
+        "🎧 *Soporte y Atención al Cliente*\n\n"
+        "Estamos aquí para ayudarte con dudas sobre:\n"
+        "🔸 Pagos VIP y Activación\n"
+        "🔸 Acceso a los canales\n"
+        "🔸 Dudas sobre apuestas y gestión de bankroll\n\n"
+        "Nuestro equipo te responderá lo antes posible."
+    )
+    link_soporte = db.get_config("link_soporte", "https://t.me/SoportePicksElite")
+    teclado = [
+        [InlineKeyboardButton("💬 Contactar con Soporte", url=link_soporte)],
+        *btn_volver_welcome()
+    ]
+    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
+
+async def cb_welcome_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    texto = (
+        "✅ *¡Solicitud Aprobada!*\n\n"
+        "Ya estás dentro de nuestro **Canal Gratuito**.\n"
+        "Prepárate para recibir los mejores picks estadísticos del mercado.\n\n"
+        "¿Qué quieres hacer ahora?"
+    )
+    teclado = [
+        [InlineKeyboardButton("🔒 Acceder al VIP", callback_data="vip")],
+        [InlineKeyboardButton("🎧 Soporte", callback_data="soporte")]
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 # =============================================
@@ -555,6 +592,9 @@ async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif tipo == "vip":
         db.set_config("link_vip", url)
         await update.message.reply_text(f"✅ Link canal VIP actualizado: `{url}`", parse_mode="Markdown")
+    elif tipo == "soporte":
+        db.set_config("link_soporte", url)
+        await update.message.reply_text(f"✅ Link de Soporte actualizado: `{url}`", parse_mode="Markdown")
     elif tipo == "admin":
         db.set_config("link_admin", url)
         await update.message.reply_text(f"✅ Link de Administrador actualizado: `{url}`", parse_mode="Markdown")
@@ -586,8 +626,9 @@ def main():
     app.add_handler(CommandHandler("id",     get_id))
     from telegram.ext import ChatJoinRequestHandler
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
-    app.add_handler(CallbackQueryHandler(cb_vip,        pattern="^vip$"))
-
+    app.add_handler(CallbackQueryHandler(cb_vip,          pattern="^vip$"))
+    app.add_handler(CallbackQueryHandler(cb_soporte,      pattern="^soporte$"))
+    app.add_handler(CallbackQueryHandler(cb_welcome_back, pattern="^welcome_back$"))
     # Admin comandos directos
     app.add_handler(CommandHandler("admin",  cmd_admin))
     app.add_handler(CommandHandler("stats",  cmd_stats))
