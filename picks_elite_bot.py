@@ -201,9 +201,9 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         link_soporte = db.get_config("link_soporte", "https://t.me/Soporte")
             
         teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔒 Canal VIP", url=link_vip)],
-            [InlineKeyboardButton("🎧 Soporte", url=link_soporte)],
-            [InlineKeyboardButton("📚 Guía para empezar", callback_data="guia")]
+            [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
+            [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")],
+            [InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")]
         ])
         
         await context.bot.send_message(
@@ -275,26 +275,10 @@ async def cb_guia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "5. Si tienes dudas utiliza el botón Soporte."
     )
     teclado = [
-        [InlineKeyboardButton("⬅️ Volver", callback_data="welcome_back")]
+        [InlineKeyboardButton("⬅️ Volver", callback_data="volver_menu")]
     ]
     await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 
-async def cb_welcome_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    texto = (
-        "🏆 ¡Bienvenido a Picks Élite!\n\n"
-        "Tu solicitud ha sido aprobada correctamente. ✅\n\n"
-        "Ya formas parte de nuestra comunidad oficial.\n"
-        "Desde aquí podrás acceder a todos nuestros servicios.\n\n"
-        "Selecciona una opción:"
-    )
-    teclado = [
-        [InlineKeyboardButton("🔒 Canal VIP", url=db.get_config("link_vip", "https://t.me/TuVIP"))],
-        [InlineKeyboardButton("🎧 Soporte", url=db.get_config("link_soporte", "https://t.me/TuSoporte"))],
-        [InlineKeyboardButton("📚 Guía para empezar", callback_data="guia")]
-    ]
-    await query.edit_message_text(texto, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(teclado))
 # =============================================
 #   PANEL DE ADMINISTRACIÓN
 # =============================================
@@ -787,7 +771,6 @@ def main():
     # app.add_handler(CallbackQueryHandler(cb_vip,          pattern="^vip$"))
     # app.add_handler(CallbackQueryHandler(cb_soporte,      pattern="^soporte$"))
     app.add_handler(CallbackQueryHandler(cb_guia,         pattern="^guia$"))
-    app.add_handler(CallbackQueryHandler(cb_welcome_back, pattern="^welcome_back$"))
     # Admin comandos directos
     app.add_handler(CommandHandler("admin",  cmd_admin))
     app.add_handler(CommandHandler("stats",  cmd_stats))
