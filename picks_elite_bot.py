@@ -154,7 +154,7 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         elif data == "canal_vip":
             link_bono5  = db.get_config("link_bono5",  "https://buy.stripe.com/4gM6oz2Tl4KP0hnfJIasg00")
-            link_bono10 = db.get_config("link_bono10", "https://buy.stripe.com/bJe9AL1Ph6SX9RXdBAAsg01")
+            link_bono10 = db.get_config("link_bono10", "https://buy.stripe.com/bJe9AL1Ph6SX9RXdBAasg01")
             texto = (
                 "💎 *Canal VIP — Picks Élite*\n\n"
                 "Elige el bono que mejor se adapta a ti:\n\n"
