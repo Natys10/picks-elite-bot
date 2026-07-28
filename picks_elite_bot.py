@@ -116,23 +116,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = db.get_config("start_text", 
         "👑 *Bienvenido a Picks Élite*\n\n"
-        "Únete ahora mismo a nuestro Canal Gratuito para ver todos los pronósticos:"
+        "Únete ahora mismo a nuestra comunidad para acceder a los mejores pronósticos deportivos."
     )
     
-    try:
-        link = get_link_gratis()
-        logger.info(f"[LINK ENVIADO AL USUARIO {user.id}] {link}")
-        teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 Acceder", url=link)]
-        ])
-    except ValueError as e:
-        logger.error(f"[START ERROR] {e}")
-        await update.message.reply_text("⚠️ El bot no está configurado correctamente. Faltan los enlaces de acceso.")
-        return
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Acceder", callback_data="acceder")]
+    ])
     
     await update.message.reply_text(
         texto, parse_mode="Markdown", reply_markup=teclado
     )
+
+async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    menu_teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
+        [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")],
+        [InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")]
+    ])
+    menu_texto = "👇 *Selecciona la opción que deseas consultar:*"
+
+    volver_teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+    ])
+
+    try:
+        if data in ["acceder", "volver_menu"]:
+            await query.edit_message_text(text=menu_texto, parse_mode="Markdown", reply_markup=menu_teclado)
+            
+        elif data == "canal_gratuito":
+            link = db.get_config("link_gratis", "Próximamente disponible...")
+            texto = f"🎁 *Canal Gratuito*\n\nAccede a nuestros pronósticos gratuitos aquí:\n\n{link}"
+            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
+            
+        elif data == "canal_vip":
+            link = db.get_config("link_vip", "Próximamente disponible...")
+            texto = f"💎 *Canal VIP*\n\nAcceso exclusivo a nuestros mejores análisis y picks premium.\n\nPuedes unirte aquí:\n\n{link}"
+            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
+            
+        elif data == "soporte":
+            link = db.get_config("link_soporte", "Próximamente disponible...")
+            texto = f"🛠️ *Soporte Técnico*\n\n¿Tienes alguna duda o problema? Contacta con nosotros:\n\n{link}"
+            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
+            
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            logger.error(f"[MENU ERROR] {e}")
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Aprueba automáticamente las solicitudes de unión al canal y envía mensaje de bienvenida"""
@@ -803,6 +835,10 @@ def main():
             await update.message.reply_text(f"⚠️ **Detecté el canal (`{getattr(chat, 'id', 'Desconocido')}`)**, pero fallé al crear el enlace.\n\nError de Telegram: `{e}`\n\n¿Es el bot Administrador con permiso de invitar usuarios?", parse_mode="Markdown")
 
     app.add_handler(MessageHandler(filters.FORWARDED, handle_forward))
+
+    # Comandos Públicos y Menú Interactivo
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(user_menu_callback, pattern="^(acceder|canal_gratuito|canal_vip|soporte|volver_menu)$"))
 
     # Callbacks panel admin
     app.add_handler(CallbackQueryHandler(cb_admin_menu,      pattern="^admin_menu$"))
