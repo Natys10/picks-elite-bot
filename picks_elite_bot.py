@@ -153,9 +153,24 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
             
         elif data == "canal_vip":
-            link = db.get_config("link_vip", "Próximamente disponible...")
-            texto = f"💎 *Canal VIP*\n\nAcceso exclusivo a nuestros mejores análisis y picks premium.\n\nPuedes unirte aquí:\n\n{link}"
-            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
+            link_bono5  = db.get_config("link_bono5",  "https://buy.stripe.com/4gM6oz2Tl4KP0hnfJIasg00")
+            link_bono10 = db.get_config("link_bono10", "https://buy.stripe.com/bJe9AL1Ph6SX9RXdBAAsg01")
+            texto = (
+                "💎 *Canal VIP — Picks Élite*\n\n"
+                "Elige el bono que mejor se adapta a ti:\n\n"
+                "🎯 *Bono 5 Picks — 8,99€*\n"
+                "Para empezar y probar • 5 análisis profesionales\n"
+                "Cuotas 1,80–2,20 • Sale a 1,79€/pick • Ahorras 1€\n\n"
+                "🔥 *Bono 10 Picks — 16,99€*\n"
+                "El más vendido • 10 análisis profesionales\n"
+                "Cuotas 2,20–3,00 • Sale a 1,69€/pick • Ahorras 3€"
+            )
+            vip_teclado = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎯 Bono 5 Picks — 8,99€", url=link_bono5)],
+                [InlineKeyboardButton("🔥 Bono 10 Picks — 16,99€", url=link_bono10)],
+                [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+            ])
+            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=vip_teclado)
             
         elif data == "soporte":
             link = db.get_config("link_soporte", "Próximamente disponible...")
@@ -660,29 +675,38 @@ async def cmd_setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     args = context.args
     if len(args) < 2:
-        await update.message.reply_text("Uso: `/setlink [gratis|vip|admin|soporte] [URL]`", parse_mode="Markdown")
+        await update.message.reply_text("Uso: `/setlink [gratis|vip|bono5|bono10|admin|soporte] [URL]`", parse_mode="Markdown")
         return
     tipo = args[0].lower()
     url = args[1]
-    
-    if not url.startswith("https://t.me/"):
+
+    # Stripe links no empiezan por t.me, asi que solo validamos t.me para links de Telegram
+    tipos_telegram = ["gratis", "vip", "admin", "soporte"]
+    tipos_stripe   = ["bono5", "bono10"]
+
+    if tipo in tipos_telegram and not url.startswith("https://t.me/"):
         await update.message.reply_text("❌ Error: La URL debe comenzar con `https://t.me/`", parse_mode="Markdown")
         return
+    if tipo in tipos_stripe and not url.startswith("https://"):
+        await update.message.reply_text("❌ Error: La URL no es válida.", parse_mode="Markdown")
+        return
 
-    if tipo == "gratis":
-        db.set_config("link_gratis", url)
-        await update.message.reply_text(f"✅ Link canal gratuito actualizado: `{url}`", parse_mode="Markdown")
-    elif tipo == "vip":
-        db.set_config("link_vip", url)
-        await update.message.reply_text(f"✅ Link canal VIP actualizado: `{url}`", parse_mode="Markdown")
-    elif tipo == "admin":
-        db.set_config("link_admin", url)
-        await update.message.reply_text(f"✅ Link de Administrador actualizado: `{url}`", parse_mode="Markdown")
-    elif tipo == "soporte":
-        db.set_config("link_soporte", url)
-        await update.message.reply_text(f"✅ Link de Soporte actualizado: `{url}`", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("Tipo inválido. Usa `gratis`, `vip`, `admin` o `soporte`.", parse_mode="Markdown")
+    mensajes = {
+        "gratis": ("link_gratis",  "✅ Link canal gratuito actualizado"),
+        "vip":    ("link_vip",     "✅ Link canal VIP actualizado"),
+        "bono5":  ("link_bono5",   "✅ Link Bono 5 Picks actualizado"),
+        "bono10": ("link_bono10",  "✅ Link Bono 10 Picks actualizado"),
+        "admin":  ("link_admin",   "✅ Link de Administrador actualizado"),
+        "soporte":("link_soporte", "✅ Link de Soporte actualizado"),
+    }
+
+    if tipo not in mensajes:
+        await update.message.reply_text("Tipo inválido. Usa `gratis`, `vip`, `bono5`, `bono10`, `admin` o `soporte`.", parse_mode="Markdown")
+        return
+
+    clave, confirmacion = mensajes[tipo]
+    db.set_config(clave, url)
+    await update.message.reply_text(f"{confirmacion}: `{url}`", parse_mode="Markdown")
 
 # =============================================
 #   ARRANQUE
