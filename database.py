@@ -97,7 +97,7 @@ class Database:
     def get_config(self, clave: str, default: str = "") -> str:
         with self._get_conn() as conn:
             row = conn.execute("SELECT valor FROM configuracion WHERE clave = ?", (clave,)).fetchone()
-        return row["valor"] if row else default
+        return row["valor"] if row and row["valor"] else default
 
     def set_config(self, clave: str, valor: str):
         with self._get_conn() as conn:
