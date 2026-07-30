@@ -189,8 +189,11 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
             
         elif data == "soporte":
-            link = db.get_config("link_soporte", "Próximamente disponible...")
-            texto = f"🛠️ *Soporte Técnico*\n\n¿Tienes alguna duda o problema? Contacta con nosotros:\n\n{link}"
+            texto = (
+                "🛠️ *Soporte Técnico*\n\n"
+                "Por favor, escribe tu pregunta o duda directamente aquí en este chat.\n\n"
+                "Nuestro equipo te responderá lo antes posible."
+            )
             await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
             
     except Exception as e:
@@ -865,7 +868,27 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(cb_pub_destino, pattern="^dest_"))
 
     # Manejador general de texto y media (admin)
-    app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_admin_input))
+    app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND) & filters.User(user_id=ADMIN_ID), handle_admin_input))
+
+    # Manejador final para mensajes libres de usuarios (Soporte)
+    async def handle_user_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        username = f"@{user.username}" if user.username else "Sin usuario"
+        
+        text = (
+            f"📩 *NUEVO MENSAJE DE SOPORTE*\n\n"
+            f"👤 *Usuario:* {user.first_name} ({username})\n"
+            f"🆔 *ID:* `{user.id}`\n\n"
+            f"📝 *Mensaje:*\n{update.message.text}"
+        )
+        
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="Markdown")
+            await update.message.reply_text("✅ Hemos recibido tu mensaje. Te responderemos lo antes posible.")
+        except Exception as e:
+            logger.error(f"[SOPORTE] Error: {e}")
+
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.User(user_id=ADMIN_ID)), handle_user_support_message))
 
 
 # =============================================
