@@ -65,6 +65,23 @@ class Database:
             conn.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('start_text', ?)", (DEFAULT_START_TEXT,))
             # Eliminados los enlaces hardcodeados por defecto (ahora se crearán vía Join Request o /setlink)
 
+            # Tabla de suscripciones Stripe ↔ Telegram
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_user_id       INTEGER NOT NULL,
+                    stripe_customer_id     TEXT    NOT NULL UNIQUE,
+                    stripe_subscription_id TEXT,
+                    status                 TEXT    DEFAULT 'active',
+                    created_at             TEXT    DEFAULT CURRENT_TIMESTAMP,
+                    updated_at             TEXT    DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_subs_customer "
+                "ON subscriptions(stripe_customer_id)"
+            )
+
             conn.commit()
         logger.info("[DB] Base de datos y configuracion inicializadas.")
 
@@ -117,3 +134,44 @@ class Database:
         with self._get_conn() as conn:
             conn.execute("INSERT INTO campanas (titulo, mensaje, enviados) VALUES (?, ?, ?)", (titulo, mensaje, enviados))
             conn.commit()
+
+    # ── Suscripciones Stripe ─────────────────────────────────────────────────
+
+    def save_subscription(self, telegram_user_id: int, stripe_customer_id: str,
+                          stripe_subscription_id: str, status: str = "active") -> None:
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO subscriptions
+                    (telegram_user_id, stripe_customer_id, stripe_subscription_id, status)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(stripe_customer_id) DO UPDATE SET
+                    stripe_subscription_id = excluded.stripe_subscription_id,
+                    status                 = excluded.status,
+                    updated_at             = CURRENT_TIMESTAMP
+            """, (telegram_user_id, stripe_customer_id, stripe_subscription_id, status))
+            conn.commit()
+
+    def get_subscription_by_customer(self, stripe_customer_id: str) -> dict | None:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM subscriptions WHERE stripe_customer_id = ?",
+                (stripe_customer_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_subscription_status(self, stripe_customer_id: str, status: str) -> None:
+        with self._get_conn() as conn:
+            conn.execute("""
+                UPDATE subscriptions
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE stripe_customer_id = ?
+            """, (status, stripe_customer_id))
+            conn.commit()
+
+    def get_active_subscription(self, telegram_user_id: int) -> dict | None:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM subscriptions WHERE telegram_user_id = ? AND status = 'active'",
+                (telegram_user_id,)
+            ).fetchone()
+        return dict(row) if row else None

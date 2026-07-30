@@ -1,8 +1,8 @@
 import os
 import logging
 import asyncio
-import threading
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+import stripe as stripe_lib
+from aiohttp import web
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -10,7 +10,10 @@ from telegram.ext import (
     ContextTypes, MessageHandler, filters, ConversationHandler
 )
 
-from config import TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID
+from config import (
+    TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID,
+    STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
+)
 from database import Database
 from admin_panel import AdminPanel
 import templates
@@ -50,22 +53,6 @@ BANNERS = {
     "vip_live":  os.path.join(os.path.dirname(__file__), "live_vip_banner.jpg"),
     "loss":      os.path.join(os.path.dirname(__file__), "win_banner.jpg"),
 }
-
-# =============================================
-#   SERVIDOR DE SALUD (Railway)
-# =============================================
-def run_health_check():
-    port = int(os.environ.get("PORT", 8080))
-    class H(SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
-        def log_message(self, *a): pass
-    try:
-        HTTPServer(("", port), H).serve_forever()
-    except Exception as e:
-        logger.error(f"[HEALTH] {e}")
 
 # =============================================
 #   HELPERS
@@ -153,24 +140,53 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
             
         elif data == "canal_vip":
-            link_bono5  = db.get_config("link_bono5",  "https://buy.stripe.com/4gM6oz2Tl4KP0hnfJIasg00")
-            link_bono10 = db.get_config("link_bono10", "https://buy.stripe.com/bJe9AL1Ph6SX9RXdBAasg01")
-            texto = (
-                "💎 *Canal VIP — Picks Élite*\n\n"
-                "Elige el bono que mejor se adapta a ti:\n\n"
-                "🎯 *Bono 5 Picks — 8,99€*\n"
-                "Para empezar y probar • 5 análisis profesionales\n"
-                "Cuotas 1,80–2,20 • Sale a 1,79€/pick • Ahorras 1€\n\n"
-                "🔥 *Bono 10 Picks — 16,99€*\n"
-                "El más vendido • 10 análisis profesionales\n"
-                "Cuotas 2,20–3,00 • Sale a 1,69€/pick • Ahorras 3€"
-            )
-            vip_teclado = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎯 Bono 5 Picks — 8,99€", url=link_bono5)],
-                [InlineKeyboardButton("🔥 Bono 10 Picks — 16,99€", url=link_bono10)],
-                [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-            ])
-            await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=vip_teclado)
+            user_id = query.from_user.id
+            # ¿Ya tiene suscripción activa?
+            existing = db.get_active_subscription(user_id)
+            if existing:
+                await query.edit_message_text(
+                    "✅ *Ya tienes el Canal VIP activo.*\n\n"
+                    "Tu suscripción está vigente. Si necesitas ayuda contacta con soporte.",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+                    ])
+                )
+                return
+            # Generar sesión de checkout dinámica
+            try:
+                stripe_lib.api_key = STRIPE_SECRET_KEY
+                session = stripe_lib.checkout.Session.create(
+                    mode="subscription",
+                    line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+                    client_reference_id=str(user_id),
+                    metadata={"telegram_user_id": str(user_id)},
+                    success_url="https://t.me/PicksEliteProBot",
+                    cancel_url="https://t.me/PicksEliteProBot",
+                )
+                texto = (
+                    "💎 *Canal VIP — Picks Élite*\n\n"
+                    "🏆 Acceso completo a todos los picks premium\n"
+                    "📊 Análisis detallado de cada partido\n"
+                    "🔔 Notificaciones en tiempo real\n\n"
+                    "💰 Solo *1,99€/mes* — Cancela cuando quieras\n\n"
+                    "Pulsa el botón para completar el pago de forma segura 👇"
+                )
+                vip_teclado = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Suscribirse — 1,99€/mes", url=session.url)],
+                    [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+                ])
+                await query.edit_message_text(
+                    text=texto, parse_mode="Markdown", reply_markup=vip_teclado
+                )
+            except Exception as e:
+                logger.error(f"[STRIPE CHECKOUT] Error creando sesión para user {user_id}: {e}")
+                await query.edit_message_text(
+                    "⚠️ Error generando el enlace de pago. Inténtalo de nuevo o contacta con soporte.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+                    ])
+                )
             
         elif data == "soporte":
             link = db.get_config("link_soporte", "Próximamente disponible...")
@@ -782,88 +798,272 @@ async def post_init(application: Application):
 
     logger.info("[OK] Picks Elite Platform v4.0 lista.")
 
-def main():
-    threading.Thread(target=run_health_check, daemon=True).start()
-
-    app = Application.builder().token(TOKEN).post_init(post_init).build()
+def setup_handlers(app: Application) -> None:
+    """Registra todos los handlers en la Application dada."""
+    from telegram.ext import ChatJoinRequestHandler
 
     # Público
-    app.add_handler(CommandHandler("start",  start))
-    app.add_handler(CommandHandler("id",     get_id))
-    from telegram.ext import ChatJoinRequestHandler
+    app.add_handler(CommandHandler("start",   start))
+    app.add_handler(CommandHandler("id",      get_id))
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
-    # app.add_handler(CallbackQueryHandler(cb_vip,          pattern="^vip$"))
-    # app.add_handler(CallbackQueryHandler(cb_soporte,      pattern="^soporte$"))
-    app.add_handler(CallbackQueryHandler(cb_guia,         pattern="^guia$"))
+    app.add_handler(CallbackQueryHandler(cb_guia, pattern="^guia$"))
+
     # Admin comandos directos
-    app.add_handler(CommandHandler("admin",  cmd_admin))
-    app.add_handler(CommandHandler("stats",  cmd_stats))
+    app.add_handler(CommandHandler("admin",   cmd_admin))
+    app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("setlink", cmd_setlink))
     app.add_handler(CommandHandler("canalid", cmd_canalid))
 
-    # Auto-generador de enlaces mágicos al reenviar mensaje del canal
+    # Auto-generador de enlaces al reenviar mensajes del canal
     async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not admin.is_admin(update.effective_user.id): return
         if not update.message.forward_origin: return
-        
+        chat = getattr(update.message.forward_origin, 'chat', None)
+        if not chat:
+            chat = getattr(update.message.forward_origin, 'sender_chat', None)
+        if not chat:
+            await update.message.reply_text("❌ No pude detectar el ID del canal.")
+            return
         try:
-            # 1. Detectar el chat.id del canal
-            chat = getattr(update.message.forward_origin, 'chat', None)
-            if not chat:
-                chat = getattr(update.message.forward_origin, 'sender_chat', None)
-                
-            if not chat:
-                await update.message.reply_text("❌ No pude detectar el ID del canal. Asegúrate de que el mensaje es realmente un reenvío desde el canal privado.")
-                return
-                
-            real_id = chat.id
-
-            # 2. Crear automáticamente el enlace
             new_link = await context.bot.create_chat_invite_link(
-                chat_id=real_id,
+                chat_id=chat.id,
                 name="Embudo Picks Elite (Auto)",
                 creates_join_request=True
             )
-            
-            # 3. Guardar ese enlace en SQLite como link_gratis
             db.set_config("link_gratis", new_link.invite_link)
-            
-            # 4. Responder con la confirmación estructurada
-            respuesta = (
+            await update.message.reply_text(
                 f"✅ **FLUJO AUTOMÁTICO COMPLETADO**\n\n"
-                f"📡 **CANAL_ID detectado:** `{real_id}`\n"
+                f"📡 **CANAL_ID detectado:** `{chat.id}`\n"
                 f"🔗 **Enlace generado:** `{new_link.invite_link}`\n"
-                f"💾 **Estado:** Guardado correctamente en SQLite como `link_gratis`.\n\n"
-                f"💡 Si este ID es diferente al que tienes en Railway, asegúrate de actualizar la variable `CANAL_ID` allí para que el autodiagnóstico no falle al reiniciar."
+                f"💾 **Estado:** Guardado en SQLite como `link_gratis`.",
+                parse_mode="Markdown"
             )
-            await update.message.reply_text(respuesta, parse_mode="Markdown")
-            
         except Exception as e:
-            await update.message.reply_text(f"⚠️ **Detecté el canal (`{getattr(chat, 'id', 'Desconocido')}`)**, pero fallé al crear el enlace.\n\nError de Telegram: `{e}`\n\n¿Es el bot Administrador con permiso de invitar usuarios?", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"⚠️ Detecté el canal (`{chat.id}`), pero fallé al crear el enlace.\n"
+                f"Error: `{e}`", parse_mode="Markdown"
+            )
 
     app.add_handler(MessageHandler(filters.FORWARDED, handle_forward))
 
-    # Comandos Públicos y Menú Interactivo
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(user_menu_callback, pattern="^(acceder|canal_gratuito|canal_vip|soporte|volver_menu)$"))
+    # Menú público
+    app.add_handler(CallbackQueryHandler(
+        user_menu_callback,
+        pattern="^(acceder|canal_gratuito|canal_vip|soporte|volver_menu)$"
+    ))
 
     # Callbacks panel admin
-    app.add_handler(CallbackQueryHandler(cb_admin_menu,      pattern="^admin_menu$"))
-    app.add_handler(CallbackQueryHandler(cb_admin_stats,     pattern="^admin_stats$"))
-    app.add_handler(CallbackQueryHandler(cb_admin_publicar,  pattern="^admin_publicar$"))
-    app.add_handler(CallbackQueryHandler(cb_admin_edit_start,pattern="^admin_edit_start$"))
-    app.add_handler(CallbackQueryHandler(cb_admin_broadcast, pattern="^admin_broadcast_info$"))
-    app.add_handler(CallbackQueryHandler(cb_admin_edit_links,pattern="^admin_edit_links$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_menu,       pattern="^admin_menu$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_stats,      pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_publicar,   pattern="^admin_publicar$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_edit_start, pattern="^admin_edit_start$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_broadcast,  pattern="^admin_broadcast_info$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_edit_links, pattern="^admin_edit_links$"))
 
     # Callbacks submenú publicación
-    app.add_handler(CallbackQueryHandler(cb_pub_tipo, pattern="^pub_"))
+    app.add_handler(CallbackQueryHandler(cb_pub_tipo,    pattern="^pub_"))
     app.add_handler(CallbackQueryHandler(cb_pub_destino, pattern="^dest_"))
 
-    # Manejador general (texto, media, etc.) para publicaciones libres y plantillas
+    # Manejador general de texto y media (admin)
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_admin_input))
 
-    logger.info("[OK] Picks Elite Platform arrancada en modo POLLING...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+# =============================================
+#   MANEJADOR DE EVENTOS STRIPE
+# =============================================
+async def handle_stripe_event(event: dict, bot) -> None:
+    event_type = event["type"]
+    obj        = event["data"]["object"]
+    logger.info(f"[STRIPE] Evento recibido: {event_type}")
+
+    if event_type == "checkout.session.completed":
+        user_id         = int(obj.get("client_reference_id") or 0)
+        customer_id     = obj.get("customer", "")
+        subscription_id = obj.get("subscription", "")
+
+        if not user_id:
+            logger.warning("[STRIPE] checkout.session.completed sin client_reference_id — ignorado")
+            return
+
+        db.save_subscription(user_id, customer_id, subscription_id, "active")
+        logger.info(f"[STRIPE] Suscripción guardada: user={user_id} customer={customer_id}")
+
+        try:
+            link = await bot.create_chat_invite_link(
+                chat_id=CANAL_VIP_ID,
+                member_limit=1,
+                name=f"VIP-{user_id}",
+                creates_join_request=False
+            )
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "✅ *¡Pago confirmado! Bienvenido al VIP* 🎉\n\n"
+                    "Aquí tienes tu enlace de acceso exclusivo al Canal VIP:\n\n"
+                    f"👇 {link.invite_link}\n\n"
+                    "_Este enlace es de un solo uso y es personal._\n"
+                    "_No lo compartas con nadie._"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"[STRIPE] Error enviando acceso VIP al user {user_id}: {e}")
+            # Notificar al admin para intervención manual
+            try:
+                await bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"⚠️ *Pago recibido pero fallo al dar acceso VIP*\n\n"
+                        f"User ID: `{user_id}`\n"
+                        f"Customer: `{customer_id}`\n"
+                        f"Error: `{e}`\n\n"
+                        "Genera y envía el enlace VIP manualmente."
+                    ),
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+
+    elif event_type == "invoice.payment_failed":
+        customer_id = obj.get("customer", "")
+        sub = db.get_subscription_by_customer(customer_id)
+        if not sub:
+            logger.warning(f"[STRIPE] invoice.payment_failed para customer desconocido: {customer_id}")
+            return
+        user_id = sub["telegram_user_id"]
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "⚠️ *Aviso: Pago fallido*\n\n"
+                    "No hemos podido procesar el pago de tu suscripción VIP.\n\n"
+                    "Tienes *3 días* para actualizar tu método de pago antes de perder el acceso.\n\n"
+                    "Actualiza tu tarjeta directamente en Stripe y el acceso se mantendrá automáticamente."
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.warning(f"[STRIPE] No se pudo avisar del pago fallido al user {user_id}: {e}")
+
+    elif event_type == "customer.subscription.deleted":
+        customer_id = obj.get("customer", "")
+        sub = db.get_subscription_by_customer(customer_id)
+        if not sub:
+            logger.warning(f"[STRIPE] subscription.deleted para customer desconocido: {customer_id}")
+            return
+        user_id = sub["telegram_user_id"]
+        db.update_subscription_status(customer_id, "canceled")
+
+        try:
+            await bot.ban_chat_member(chat_id=CANAL_VIP_ID, user_id=user_id)
+            await bot.unban_chat_member(chat_id=CANAL_VIP_ID, user_id=user_id)
+            logger.info(f"[STRIPE] User {user_id} expulsado del VIP por cancelación")
+        except Exception as e:
+            logger.warning(f"[STRIPE] No se pudo expulsar al user {user_id} del VIP: {e}")
+
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ *Suscripción cancelada*\n\n"
+                    "Tu acceso al Canal VIP ha sido revocado.\n\n"
+                    "Puedes volver a suscribirte cuando quieras desde el bot:\n"
+                    "👉 @PicksEliteProBot"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.warning(f"[STRIPE] No se pudo notificar la cancelación al user {user_id}: {e}")
+
+
+# =============================================
+#   PUNTO DE ENTRADA PRINCIPAL
+# =============================================
+async def main_async() -> None:
+    """Arranca en modo webhook (Telegram + Stripe) con servidor aiohttp."""
+    stripe_lib.api_key = STRIPE_SECRET_KEY
+
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(post_init)
+        .build()
+    )
+    setup_handlers(application)
+    await application.initialize()
+    await application.start()
+
+    # ── Interruptor de rollback: USE_POLLING=true → vuelve a polling ─────────
+    if os.environ.get("USE_POLLING", "").lower() == "true":
+        logger.info("[OK] USE_POLLING=true detectado — arrancando en modo POLLING (rollback activo)")
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        return
+
+    # ── Registrar webhook de Telegram ────────────────────────────────────────
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if render_url:
+        await application.bot.set_webhook(
+            url=f"{render_url}/telegram",
+            drop_pending_updates=True,
+            allowed_updates=list(Update.ALL_TYPES),
+        )
+        logger.info(f"[WEBHOOK] Telegram registrado en {render_url}/telegram")
+    else:
+        logger.warning("[WEBHOOK] RENDER_EXTERNAL_URL no definida — webhook de Telegram NO registrado")
+
+    # ── Rutas aiohttp ────────────────────────────────────────────────────────
+    async def health(request: web.Request) -> web.Response:
+        return web.Response(text="OK")
+
+    async def telegram_webhook(request: web.Request) -> web.Response:
+        try:
+            data   = await request.json()
+            update = Update.de_json(data, application.bot)
+            await application.process_update(update)
+        except Exception as e:
+            logger.error(f"[TELEGRAM WEBHOOK] Error procesando update: {e}")
+        return web.Response(text="OK")
+
+    async def stripe_webhook(request: web.Request) -> web.Response:
+        payload = await request.read()
+        sig     = request.headers.get("Stripe-Signature", "")
+        try:
+            event = stripe_lib.Webhook.construct_event(
+                payload, sig, STRIPE_WEBHOOK_SECRET
+            )
+        except stripe_lib.error.SignatureVerificationError:
+            logger.warning("[STRIPE] Firma de webhook inválida — rechazada")
+            return web.Response(status=400, text="Bad signature")
+        except Exception as e:
+            logger.error(f"[STRIPE] Error construyendo evento: {e}")
+            return web.Response(status=400, text="Error")
+        await handle_stripe_event(event, application.bot)
+        return web.Response(text="OK")
+
+    web_app = web.Application()
+    web_app.router.add_get("/",                health)
+    web_app.router.add_get("/health",          health)
+    web_app.router.add_post("/telegram",       telegram_webhook)
+    web_app.router.add_post("/stripe/webhook", stripe_webhook)
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"[OK] Picks Elite Platform v5.0 — servidor en puerto {port}")
+
+    try:
+        await asyncio.Event().wait()   # Mantener vivo indefinidamente
+    finally:
+        await application.stop()
+        await runner.cleanup()
+
+
+def main() -> None:
+    asyncio.run(main_async())
+
 
 if __name__ == "__main__":
     main()

@@ -19,6 +19,11 @@ CANAL_VIP_ID = int(os.environ.get("CANAL_VIP_ID", -1004381972016)) # Canal VIP (
 
 DB_PATH = os.environ.get("DB_PATH", "picks_elite.db")
 
+# ── Stripe ───────────────────────────────────────────────────────────────────
+STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")
+
 DEFAULT_START_TEXT = """👑 *¡Bienvenido a Picks Élite!*
 
 ⚽ Bienvenido a una comunidad donde el análisis está por encima de la suerte.
