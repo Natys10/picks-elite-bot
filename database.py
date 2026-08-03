@@ -82,6 +82,16 @@ class Database:
                 "ON subscriptions(stripe_customer_id)"
             )
 
+            # Tabla de persistencia para el borrado automático de Pick Premium a las 24h
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS mensajes_pendientes_borrar (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    message_id INTEGER,
+                    borrar_en INTEGER
+                )
+            """)
+
             conn.commit()
         logger.info("[DB] Base de datos y configuracion inicializadas.")
 
@@ -175,3 +185,26 @@ class Database:
                 (telegram_user_id,)
             ).fetchone()
         return dict(row) if row else None
+
+    # ── Pick Premium Borrado Persistente ─────────────────────────────────────
+
+    def guardar_borrado_pendiente(self, chat_id: int, message_id: int, borrar_en: int) -> None:
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO mensajes_pendientes_borrar (chat_id, message_id, borrar_en)
+                VALUES (?, ?, ?)
+            """, (chat_id, message_id, borrar_en))
+            conn.commit()
+
+    def obtener_borrados_pendientes(self) -> list:
+        with self._get_conn() as conn:
+            rows = conn.execute("SELECT * FROM mensajes_pendientes_borrar").fetchall()
+        return [dict(r) for r in rows]
+
+    def eliminar_borrado_pendiente(self, chat_id: int, message_id: int) -> None:
+        with self._get_conn() as conn:
+            conn.execute("""
+                DELETE FROM mensajes_pendientes_borrar
+                WHERE chat_id = ? AND message_id = ?
+            """, (chat_id, message_id))
+            conn.commit()

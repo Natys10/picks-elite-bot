@@ -13,6 +13,7 @@ from telegram.ext import (
 from config import (
     TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID,
     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
+    STRIPE_PICK_PREMIUM_PRICE_ID
 )
 from database import Database
 from admin_panel import AdminPanel
@@ -43,6 +44,7 @@ ESPERANDO_BROADCAST = 7
 ESPERANDO_START_MSG = 8
 ESPERANDO_CUSTOM    = 9
 ESPERANDO_DESTINO_CUSTOM = 10
+ESPERANDO_PICK_PREMIUM = 11
 
 # Banners por tipo de publicación
 BANNERS = {
@@ -119,11 +121,18 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
 
-    menu_teclado = InlineKeyboardMarkup([
+    menu_teclado = [
         [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
-        [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")],
-        [InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")]
-    ])
+        [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")]
+    ]
+    
+    active_pick = db.get_config("active_pick_premium", "")
+    if active_pick:
+        menu_teclado.append([InlineKeyboardButton("🔥 Comprar Pick Premium (Pago Único)", callback_data="comprar_pick_premium")])
+        
+    menu_teclado.append([InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")])
+    menu_teclado = InlineKeyboardMarkup(menu_teclado)
+    
     menu_texto = "👇 *Selecciona la opción que deseas consultar:*"
 
     volver_teclado = InlineKeyboardMarkup([
@@ -169,11 +178,11 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     "🏆 Acceso completo a todos los picks premium\n"
                     "📊 Análisis detallado de cada partido\n"
                     "🔔 Notificaciones en tiempo real\n\n"
-                    "💰 Solo *1,99€/mes* — Cancela cuando quieras\n\n"
+                    "💰 Solo *2,99€/mes* — Cancela cuando quieras\n\n"
                     "Pulsa el botón para completar el pago de forma segura 👇"
                 )
                 vip_teclado = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💳 Suscribirse — 1,99€/mes", url=session.url)],
+                    [InlineKeyboardButton("💳 Suscribirse — 2,99€/mes", url=session.url)],
                     [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
                 ])
                 await query.edit_message_text(
@@ -181,6 +190,41 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
             except Exception as e:
                 logger.error(f"[STRIPE CHECKOUT] Error creando sesión para user {user_id}: {e}")
+                await query.edit_message_text(
+                    "⚠️ Error generando el enlace de pago. Inténtalo de nuevo o contacta con soporte.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+                    ])
+                )
+                
+        elif data == "comprar_pick_premium":
+            user_id = query.from_user.id
+            try:
+                stripe_lib.api_key = STRIPE_SECRET_KEY
+                session = stripe_lib.checkout.Session.create(
+                    mode="payment",
+                    line_items=[{"price": STRIPE_PICK_PREMIUM_PRICE_ID, "quantity": 1}],
+                    client_reference_id=str(user_id),
+                    metadata={"telegram_user_id": str(user_id), "type": "pick_premium"},
+                    success_url="https://t.me/PicksEliteProBot",
+                    cancel_url="https://t.me/PicksEliteProBot",
+                )
+                texto = (
+                    "🔥 *Pick Premium — Picks Élite*\n\n"
+                    "🎯 Análisis exclusivo del día con alta confianza\n"
+                    "⏱️ Lo recibirás por mensaje privado automáticamente\n\n"
+                    "💰 Pago único de *5,99€*\n\n"
+                    "Pulsa el botón para completar el pago de forma segura 👇"
+                )
+                premium_teclado = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Comprar Pick — 5,99€", url=session.url)],
+                    [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
+                ])
+                await query.edit_message_text(
+                    text=texto, parse_mode="Markdown", reply_markup=premium_teclado
+                )
+            except Exception as e:
+                logger.error(f"[STRIPE CHECKOUT PREMIUM] Error creando sesión para user {user_id}: {e}")
                 await query.edit_message_text(
                     "⚠️ Error generando el enlace de pago. Inténtalo de nuevo o contacta con soporte.",
                     reply_markup=InlineKeyboardMarkup([
@@ -543,6 +587,16 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop("pub_estado", None)
         await update.message.reply_text("✅ Mensaje de bienvenida actualizado.", reply_markup=get_panel_admin_markup())
 
+    elif estado == ESPERANDO_PICK_PREMIUM:
+        db.set_config("active_pick_premium", text)
+        context.user_data.pop("pub_estado", None)
+        await update.message.reply_text(
+            "✅ *Pick Premium guardado.*\n\n"
+            "Los usuarios ya pueden comprarlo desde el menú principal.",
+            parse_mode="Markdown",
+            reply_markup=get_panel_admin_markup()
+        )
+
     elif estado == ESPERANDO_BROADCAST:
         context.user_data.pop("pub_estado", None)
         await update.message.reply_text("🚀 Enviando difusión...")
@@ -685,6 +739,32 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+async def cmd_pick_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not admin.is_admin(update.effective_user.id): return
+    active = db.get_config("active_pick_premium", "")
+    
+    if active:
+        msg = (
+            "🔥 *CONFIGURAR PICK PREMIUM*\n\n"
+            "Actualmente hay un pick activo configurado:\n\n"
+            f"_{active}_\n\n"
+            "Envía el *nuevo texto* para reemplazarlo, o usa /cancelar para dejar el actual."
+        )
+    else:
+        msg = (
+            "🔥 *CONFIGURAR PICK PREMIUM*\n\n"
+            "No hay ningún pick configurado.\n"
+            "Envía el texto de tu análisis premium (usa Markdown si quieres).\n"
+            "O usa /cancelar para salir."
+        )
+        
+    context.user_data["pub_estado"] = ESPERANDO_PICK_PREMIUM
+    await update.message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")]])
+    )
+
 async def cmd_canalid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id): return
     await update.message.reply_text("Para obtener tu CANAL_ID, simplemente **reenvía cualquier mensaje de tu canal privado a este chat**.", parse_mode="Markdown")
@@ -794,10 +874,44 @@ async def post_init(application: Application):
                 await application.bot.send_message(
                     chat_id=ADMIN_ID,
                     text=f"❌ **FALLO CRÍTICO EN AUTODIAGNÓSTICO**\n\nTelegram ha bloqueado la creación del enlace. Error exacto:\n`{str(e)}`\n\nRevisa los permisos del bot o si el CANAL_ID (`{CANAL_ID}`) es el correcto.",
-                    parse_mode="Markdown"
-                )
-            except:
-                pass
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+
+    import time
+    
+    # --- RECARGAR BORRADOS PENDIENTES DEL PICK PREMIUM ---
+    pendientes = db.obtener_borrados_pendientes()
+    ahora = int(time.time())
+    recuperados = 0
+    inmediatos = 0
+    
+    for p in pendientes:
+        chat_id = p["chat_id"]
+        msg_id = p["message_id"]
+        borrar_en = p["borrar_en"]
+        
+        if borrar_en <= ahora:
+            # Ya pasó el tiempo, borrar de inmediato
+            inmediatos += 1
+            try:
+                await application.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            except Exception as e:
+                logger.warning(f"[RECARGA BORRADO] Fallo al borrar msg inmediato {msg_id} en {chat_id}: {e}")
+            finally:
+                db.eliminar_borrado_pendiente(chat_id, msg_id)
+        else:
+            # Reprogramar para el futuro
+            retraso = borrar_en - ahora
+            recuperados += 1
+            application.job_queue.run_once(
+                delete_message_job,
+                retraso,
+                data={"chat_id": chat_id, "message_id": msg_id}
+            )
+            
+    logger.info(f"[JOB_QUEUE] Restaurados {recuperados} borrados pendientes. {inmediatos} borrados ejecutados de inmediato.")
 
     logger.info("[OK] Picks Elite Platform v4.0 lista.")
 
@@ -816,6 +930,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("setlink", cmd_setlink))
     app.add_handler(CommandHandler("canalid", cmd_canalid))
+    app.add_handler(CommandHandler("pick_premium", cmd_pick_premium))
 
     # Auto-generador de enlaces al reenviar mensajes del canal
     async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -852,7 +967,7 @@ def setup_handlers(app: Application) -> None:
     # Menú público
     app.add_handler(CallbackQueryHandler(
         user_menu_callback,
-        pattern="^(acceder|canal_gratuito|canal_vip|soporte|volver_menu)$"
+        pattern="^(acceder|canal_gratuito|canal_vip|comprar_pick_premium|soporte|volver_menu)$"
     ))
 
     # Callbacks panel admin
@@ -891,10 +1006,23 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.User(user_id=ADMIN_ID)), handle_user_support_message))
 
 
+async def delete_message_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = context.job.data
+    chat_id = data["chat_id"]
+    message_id = data["message_id"]
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logger.info(f"[JOB_QUEUE] Mensaje premium {message_id} borrado exitosamente en {chat_id}")
+    except Exception as e:
+        logger.warning(f"[JOB_QUEUE] No se pudo borrar el mensaje {message_id} en {chat_id}: {e}")
+    finally:
+        db.eliminar_borrado_pendiente(chat_id, message_id)
+
 # =============================================
 #   MANEJADOR DE EVENTOS STRIPE
 # =============================================
-async def handle_stripe_event(event: dict, bot) -> None:
+async def handle_stripe_event(event: dict, application: Application) -> None:
+    bot = application.bot
     event_type = event["type"]
     obj        = event["data"]["object"]
     logger.info(f"[STRIPE] Evento recibido: {event_type}")
@@ -908,6 +1036,56 @@ async def handle_stripe_event(event: dict, bot) -> None:
             logger.warning("[STRIPE] checkout.session.completed sin client_reference_id — ignorado")
             return
 
+        mode = obj.get("mode")
+        
+        if mode == "payment":
+            # --- FLUJO PICK PREMIUM (PAGO ÚNICO) ---
+            logger.info(f"[STRIPE] Pago único completado: user={user_id}")
+            pick_texto = db.get_config("active_pick_premium", "")
+            
+            if pick_texto:
+                try:
+                    # Enviar pick al usuario
+                    msg = await bot.send_message(
+                        chat_id=user_id,
+                        text=f"🔥 *Tu Pick Premium*\n\n{pick_texto}\n\n_Este mensaje se autodestruirá en 24 horas._",
+                        parse_mode="Markdown"
+                    )
+                    # Programar borrado a las 24h
+                    import time
+                    segundos_24h = 86400
+                    borrar_en = int(time.time()) + segundos_24h
+                    db.guardar_borrado_pendiente(user_id, msg.message_id, borrar_en)
+                    
+                    application.job_queue.run_once(
+                        delete_message_job,
+                        segundos_24h,
+                        data={"chat_id": user_id, "message_id": msg.message_id}
+                    )
+                except Exception as e:
+                    logger.error(f"[STRIPE] Error enviando Pick Premium a user {user_id}: {e}")
+                    await bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=f"⚠️ *Fallo enviando Pick Premium*\nUser: `{user_id}`\nError: `{e}`",
+                        parse_mode="Markdown"
+                    )
+            else:
+                # No hay pick configurado
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text="✅ Tu pago fue confirmado. En breve recibirás tu análisis premium por este chat."
+                    )
+                    await bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=f"⚠️ *Pago Premium Recibido pero sin Pick Activo*\nUser ID: `{user_id}` acaba de pagar pero no hay ningún pick configurado. ¡Envíalo manualmente!",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"[STRIPE] Error avisando de Pick Pendiente a user {user_id}: {e}")
+            return
+            
+        # --- FLUJO VIP (SUBSCRIPTION) ---
         db.save_subscription(user_id, customer_id, subscription_id, "active")
         logger.info(f"[STRIPE] Suscripción guardada: user={user_id} customer={customer_id}")
 
@@ -921,11 +1099,11 @@ async def handle_stripe_event(event: dict, bot) -> None:
             await bot.send_message(
                 chat_id=user_id,
                 text=(
-                    "✅ *¡Pago confirmado! Bienvenido al VIP* 🎉\n\n"
-                    "Aquí tienes tu enlace de acceso exclusivo al Canal VIP:\n\n"
-                    f"👇 {link.invite_link}\n\n"
-                    "_Este enlace es de un solo uso y es personal._\n"
-                    "_No lo compartas con nadie._"
+                    "🔑 *Aquí tienes tu enlace al canal VIP*\n\n"
+                    "💎 Acceso a las mejores cuotas diarias personalizadas\n"
+                    "🎁 Pronóstico totalmente gratuito cada semana\n"
+                    "📊 Información privilegiada, análisis y seguimiento personal\n\n"
+                    f"👇 *Únete aquí:*\n{link.invite_link}"
                 ),
                 parse_mode="Markdown"
             )
@@ -1061,7 +1239,7 @@ async def main_async() -> None:
         except Exception as e:
             logger.error(f"[STRIPE] Error construyendo evento: {e}")
             return web.Response(status=400, text="Error")
-        await handle_stripe_event(event, application.bot)
+        await handle_stripe_event(event, application)
         return web.Response(text="OK")
 
     web_app = web.Application()
