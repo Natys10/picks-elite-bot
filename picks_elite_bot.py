@@ -874,10 +874,10 @@ async def post_init(application: Application):
                 await application.bot.send_message(
                     chat_id=ADMIN_ID,
                     text=f"❌ **FALLO CRÍTICO EN AUTODIAGNÓSTICO**\n\nTelegram ha bloqueado la creación del enlace. Error exacto:\n`{str(e)}`\n\nRevisa los permisos del bot o si el CANAL_ID (`{CANAL_ID}`) es el correcto.",
-                parse_mode="Markdown"
-            )
-        except:
-            pass
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
 
     import time
     
