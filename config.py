@@ -23,7 +23,7 @@ DB_PATH = os.environ.get("DB_PATH", "picks_elite.db")
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")
-STRIPE_PICK_PREMIUM_PRICE_ID = os.environ.get("STRIPE_PICK_PREMIUM_PRICE_ID", "")
+PICK_PREMIUM_PRECIO_CENTAVOS = int(os.environ.get("PICK_PREMIUM_PRECIO_CENTAVOS", 599))
 
 DEFAULT_START_TEXT = """👑 *¡Bienvenido a Picks Élite!*
 
