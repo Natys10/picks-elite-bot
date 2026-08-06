@@ -13,10 +13,11 @@ from telegram.ext import (
 from config import (
     TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID,
     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
-    PICK_PREMIUM_PRECIO_CENTAVOS
+    PICK_PREMIUM_PRECIO_CENTAVOS, ANTHROPIC_API_KEY, PROMO_INTERVAL_HOURS
 )
 from database import Database
 from admin_panel import AdminPanel
+from ai_marketing import generate_promo
 import templates
 
 # =============================================
@@ -948,7 +949,79 @@ async def post_init(application: Application):
             
     logger.info(f"[JOB_QUEUE] Restaurados {recuperados} borrados pendientes. {inmediatos} borrados ejecutados de inmediato.")
 
+    # --- PUBLICIDAD AUTOMÁTICA CON IA (Claude) ---
+    if ANTHROPIC_API_KEY:
+        application.job_queue.run_repeating(
+            auto_promo_job,
+            interval=PROMO_INTERVAL_HOURS * 3600,
+            first=300,  # primer anuncio 5 minutos después de arrancar
+            name="auto_promo",
+        )
+        logger.info(f"[PROMO AUTO] Programado cada {PROMO_INTERVAL_HOURS}h (primer envío en 5 min).")
+    else:
+        logger.warning("[PROMO AUTO] ANTHROPIC_API_KEY no configurada — publicidad automática desactivada.")
+
     logger.info("[OK] Picks Elite Platform v4.0 lista.")
+
+async def cmd_promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Genera con IA y publica de inmediato un anuncio del Canal VIP en el canal gratuito."""
+    if not admin.is_admin(update.effective_user.id): return
+
+    extra = " ".join(context.args) if context.args else ""
+    aviso = await update.message.reply_text("🤖 Generando anuncio con IA...")
+
+    try:
+        texto = generate_promo(extra)
+    except Exception as e:
+        logger.exception("[PROMO] Error generando el anuncio")
+        await aviso.edit_text(f"❌ Error generando el anuncio: {e}")
+        return
+
+    try:
+        link_vip = get_link_vip()
+    except Exception:
+        link_vip = "https://t.me/ErrorVIP"
+        logger.warning("[PROMO] Falta link_vip configurado (/setlink vip).")
+
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("👑 CANAL VIP", url=link_vip)]])
+
+    try:
+        await context.bot.send_message(
+            chat_id=CANAL_ID, text=texto, parse_mode="Markdown", reply_markup=teclado
+        )
+    except Exception as e:
+        logger.exception("[PROMO] Error publicando el anuncio")
+        await aviso.edit_text(f"❌ Error publicando en el canal: {e}")
+        return
+
+    await aviso.edit_text(f"✅ Anuncio publicado en el canal:\n\n{texto}")
+
+
+async def auto_promo_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Job periódico: genera con IA y publica automáticamente un anuncio del Canal VIP."""
+    try:
+        texto = generate_promo()
+    except Exception:
+        logger.exception("[PROMO AUTO] Error generando el anuncio")
+        return
+
+    try:
+        link_vip = get_link_vip()
+    except Exception:
+        link_vip = "https://t.me/ErrorVIP"
+        logger.warning("[PROMO AUTO] Falta link_vip configurado (/setlink vip).")
+
+    try:
+        await context.bot.send_message(
+            chat_id=CANAL_ID,
+            text=texto,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👑 CANAL VIP", url=link_vip)]]),
+        )
+        logger.info("[PROMO AUTO] Anuncio publicado automáticamente en el canal.")
+    except Exception:
+        logger.exception("[PROMO AUTO] Error publicando el anuncio automático")
+
 
 def setup_handlers(app: Application) -> None:
     """Registra todos los handlers en la Application dada."""
@@ -966,6 +1039,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("setlink", cmd_setlink))
     app.add_handler(CommandHandler("canalid", cmd_canalid))
     app.add_handler(CommandHandler("pick_premium", cmd_pick_premium))
+    app.add_handler(CommandHandler("promo",   cmd_promo))
 
     # Auto-generador de enlaces al reenviar mensajes del canal
     async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):

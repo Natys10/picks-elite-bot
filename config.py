@@ -19,6 +19,12 @@ CANAL_VIP_ID = int(os.environ.get("CANAL_VIP_ID", -1004381972016)) # Canal VIP (
 
 DB_PATH = os.environ.get("DB_PATH", "picks_elite.db")
 
+# ── Asistente de IA (publicidad automática) ────────────────────────────────
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-5")
+# Cada cuántas horas se publica un anuncio generado por IA en el canal gratuito
+PROMO_INTERVAL_HOURS = float(os.environ.get("PROMO_INTERVAL_HOURS", "24"))
+
 # ── Stripe ───────────────────────────────────────────────────────────────────
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
