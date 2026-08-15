@@ -124,8 +124,7 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = query.data
 
     menu_teclado = [
-        [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
-        [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")]
+        [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")]
     ]
     
     active_teaser = db.get_config("active_pick_premium_teaser", "")
@@ -149,56 +148,7 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             link = db.get_config("link_gratis", "Próximamente disponible...")
             texto = f"🎁 *Canal Gratuito*\n\nAccede a nuestros pronósticos gratuitos aquí:\n\n{link}"
             await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
-            
-        elif data == "canal_vip":
-            user_id = query.from_user.id
-            # ¿Ya tiene suscripción activa?
-            existing = db.get_active_subscription(user_id)
-            if existing:
-                await query.edit_message_text(
-                    "✅ *Ya tienes el Canal VIP activo.*\n\n"
-                    "Tu suscripción está vigente. Si necesitas ayuda contacta con soporte.",
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-                    ])
-                )
-                return
-            # Generar sesión de checkout dinámica
-            try:
-                stripe_lib.api_key = STRIPE_SECRET_KEY
-                session = stripe_lib.checkout.Session.create(
-                    mode="subscription",
-                    line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-                    client_reference_id=str(user_id),
-                    metadata={"telegram_user_id": str(user_id)},
-                    success_url="https://t.me/PicksEliteProBot",
-                    cancel_url="https://t.me/PicksEliteProBot",
-                )
-                texto = (
-                    "💎 *Canal VIP — Picks Élite*\n\n"
-                    "🏆 Acceso completo a todos los picks premium\n"
-                    "📊 Análisis detallado de cada partido\n"
-                    "🔔 Notificaciones en tiempo real\n\n"
-                    "💰 Solo *2,99€/mes* — Cancela cuando quieras\n\n"
-                    "Pulsa el botón para completar el pago de forma segura 👇"
-                )
-                vip_teclado = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💳 Suscribirse — 2,99€/mes", url=session.url)],
-                    [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-                ])
-                await query.edit_message_text(
-                    text=texto, parse_mode="Markdown", reply_markup=vip_teclado
-                )
-            except Exception as e:
-                logger.error(f"[STRIPE CHECKOUT] Error creando sesión para user {user_id}: {e}")
-                await query.edit_message_text(
-                    "⚠️ Error generando el enlace de pago. Inténtalo de nuevo o contacta con soporte.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-                    ])
-                )
-                
+
         elif data == "comprar_pick_premium":
             user_id = query.from_user.id
             teaser = db.get_config("active_pick_premium_teaser", "Análisis Premium")
@@ -293,7 +243,6 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             
         teclado = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
-            [InlineKeyboardButton("💎 Canal VIP", callback_data="canal_vip")],
             [InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")]
         ])
         
@@ -1076,7 +1025,7 @@ def setup_handlers(app: Application) -> None:
     # Menú público
     app.add_handler(CallbackQueryHandler(
         user_menu_callback,
-        pattern="^(acceder|canal_gratuito|canal_vip|comprar_pick_premium|soporte|volver_menu)$"
+        pattern="^(acceder|canal_gratuito|comprar_pick_premium|soporte|volver_menu)$"
     ))
 
     # Callbacks panel admin
