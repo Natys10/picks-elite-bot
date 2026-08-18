@@ -13,7 +13,7 @@ from telegram.ext import (
 from config import (
     TOKEN, ADMIN_ID, CANAL_ID, CANAL_VIP_ID,
     STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
-    PICK_PREMIUM_PRECIO_CENTAVOS, ANTHROPIC_API_KEY, PROMO_INTERVAL_HOURS
+    ANTHROPIC_API_KEY, PROMO_INTERVAL_HOURS
 )
 from database import Database
 from admin_panel import AdminPanel
@@ -45,8 +45,6 @@ ESPERANDO_BROADCAST = 7
 ESPERANDO_START_MSG = 8
 ESPERANDO_CUSTOM    = 9
 ESPERANDO_DESTINO_CUSTOM = 10
-ESPERANDO_PICK_TEASER = 11
-ESPERANDO_PICK_MEDIA = 12
 
 # Banners por tipo de publicación
 BANNERS = {
@@ -124,14 +122,9 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = query.data
 
     menu_teclado = [
-        [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")]
+        [InlineKeyboardButton("🎁 Canal Gratuito", callback_data="canal_gratuito")],
+        [InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")]
     ]
-    
-    active_teaser = db.get_config("active_pick_premium_teaser", "")
-    if active_teaser:
-        menu_teclado.append([InlineKeyboardButton("🔥 Comprar Pick Premium (Pago Único)", callback_data="comprar_pick_premium")])
-        
-    menu_teclado.append([InlineKeyboardButton("🛠️ Soporte", callback_data="soporte")])
     menu_teclado = InlineKeyboardMarkup(menu_teclado)
     
     menu_texto = "👇 *Selecciona la opción que deseas consultar:*"
@@ -149,52 +142,6 @@ async def user_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             texto = f"🎁 *Canal Gratuito*\n\nAccede a nuestros pronósticos gratuitos aquí:\n\n{link}"
             await query.edit_message_text(text=texto, parse_mode="Markdown", reply_markup=volver_teclado)
 
-        elif data == "comprar_pick_premium":
-            user_id = query.from_user.id
-            teaser = db.get_config("active_pick_premium_teaser", "Análisis Premium")
-            try:
-                stripe_lib.api_key = STRIPE_SECRET_KEY
-                session = stripe_lib.checkout.Session.create(
-                    mode="payment",
-                    line_items=[{
-                        "price_data": {
-                            "currency": "eur",
-                            "unit_amount": PICK_PREMIUM_PRECIO_CENTAVOS,
-                            "product_data": {
-                                "name": f"Pick Premium: {teaser}"
-                            }
-                        },
-                        "quantity": 1
-                    }],
-                    client_reference_id=str(user_id),
-                    metadata={"telegram_user_id": str(user_id), "type": "pick_premium"},
-                    success_url="https://t.me/PicksEliteProBot",
-                    cancel_url="https://t.me/PicksEliteProBot",
-                )
-                euros = PICK_PREMIUM_PRECIO_CENTAVOS / 100
-                texto = (
-                    "🔥 *Pick Premium — Picks Élite*\n\n"
-                    f"🎯 **{teaser}**\n"
-                    "⏱️ Recibirás las imágenes del análisis por mensaje privado inmediatamente\n\n"
-                    f"💰 Pago único de *{euros:.2f}€*\n\n"
-                    "Pulsa el botón para completar el pago de forma segura 👇"
-                )
-                premium_teclado = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"💳 Comprar Pick — {euros:.2f}€", url=session.url)],
-                    [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-                ])
-                await query.edit_message_text(
-                    text=texto, parse_mode="Markdown", reply_markup=premium_teclado
-                )
-            except Exception as e:
-                logger.error(f"[STRIPE CHECKOUT PREMIUM] Error creando sesión para user {user_id}: {e}")
-                await query.edit_message_text(
-                    "⚠️ Error generando el enlace de pago. Inténtalo de nuevo o contacta con soporte.",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Volver", callback_data="volver_menu")]
-                    ])
-                )
-            
         elif data == "soporte":
             texto = (
                 "🛠️ *Soporte Técnico*\n\n"
@@ -549,38 +496,6 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop("pub_estado", None)
         await update.message.reply_text("✅ Mensaje de bienvenida actualizado.", reply_markup=get_panel_admin_markup())
 
-    elif estado == ESPERANDO_PICK_TEASER:
-        context.user_data["temp_teaser"] = text
-        context.user_data["temp_media"] = []
-        context.user_data["pub_estado"] = ESPERANDO_PICK_MEDIA
-        await update.message.reply_text(
-            "✅ *Teaser guardado.*\n\nAhora envíame la **PRIMERA FOTO** del análisis completo.",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")]])
-        )
-
-    elif estado == ESPERANDO_PICK_MEDIA:
-        if not update.message.photo:
-            await update.message.reply_text(
-                "⚠️ *Error*: Debes enviar una FOTO o usar /cancelar.",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")]])
-            )
-            return
-            
-        file_id = update.message.photo[-1].file_id
-        temp_media = context.user_data.get("temp_media", [])
-        temp_media.append(file_id)
-        context.user_data["temp_media"] = temp_media
-        
-        await update.message.reply_text(
-            f"✅ Foto {len(temp_media)} recibida.\n\nSi tiene otra foto, envíala ahora.\nSi ya terminaste, pulsa el botón para GUARDAR.",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Terminar y Guardar", callback_data="guardar_pick_media")],
-                [InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")]
-            ])
-        )
 
     elif estado == ESPERANDO_BROADCAST:
         context.user_data.pop("pub_estado", None)
@@ -724,31 +639,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def cmd_pick_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not admin.is_admin(update.effective_user.id): return
-    active_teaser = db.get_config("active_pick_premium_teaser", "")
-    
-    if active_teaser:
-        msg = (
-            "🔥 *CONFIGURAR PICK PREMIUM*\n\n"
-            "Actualmente hay un pick activo configurado:\n\n"
-            f"_{active_teaser}_\n\n"
-            "Envía el *NUEVO TEASER* corto que verán los usuarios en el menú (ej: 'Vélez vs Independiente — Cuota 3.35') para reemplazarlo, o usa /cancelar."
-        )
-    else:
-        msg = (
-            "🔥 *CONFIGURAR PICK PREMIUM*\n\n"
-            "No hay ningún pick configurado.\n"
-            "Envía el TEASER corto que verán los usuarios en el menú antes de pagar (ej: 'Vélez vs Independiente — Cuota 3.35').\n"
-            "O usa /cancelar para salir."
-        )
-        
-    context.user_data["pub_estado"] = ESPERANDO_PICK_TEASER
-    await update.message.reply_text(
-        msg,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="admin_menu")]])
-    )
+
 
 async def cmd_canalid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not admin.is_admin(update.effective_user.id): return
@@ -987,7 +878,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("setlink", cmd_setlink))
     app.add_handler(CommandHandler("canalid", cmd_canalid))
-    app.add_handler(CommandHandler("pick_premium", cmd_pick_premium))
+
     app.add_handler(CommandHandler("promo",   cmd_promo))
 
     # Auto-generador de enlaces al reenviar mensajes del canal
@@ -1025,7 +916,7 @@ def setup_handlers(app: Application) -> None:
     # Menú público
     app.add_handler(CallbackQueryHandler(
         user_menu_callback,
-        pattern="^(acceder|canal_gratuito|comprar_pick_premium|soporte|volver_menu)$"
+        pattern="^(acceder|canal_gratuito|soporte|volver_menu)$"
     ))
 
     # Callbacks panel admin
@@ -1040,37 +931,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(cb_pub_tipo,    pattern="^pub_"))
     app.add_handler(CallbackQueryHandler(cb_pub_destino, pattern="^dest_"))
     
-    async def cb_guardar_pick_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        if not admin.is_admin(query.from_user.id): return
-        
-        estado = context.user_data.get("pub_estado")
-        if estado == ESPERANDO_PICK_MEDIA:
-            import json
-            teaser = context.user_data.get("temp_teaser", "")
-            media = context.user_data.get("temp_media", [])
-            
-            if not media:
-                await query.edit_message_text("❌ Error: No enviaste ninguna foto.")
-                return
-                
-            db.set_config("active_pick_premium_teaser", teaser)
-            db.set_config("active_pick_premium_media", json.dumps(media))
-            
-            context.user_data.pop("pub_estado", None)
-            context.user_data.pop("temp_teaser", None)
-            context.user_data.pop("temp_media", None)
-            
-            await query.edit_message_text(
-                "✅ *Pick Premium guardado exitosamente.*\n\n"
-                f"📸 Imágenes guardadas: {len(media)}\n\n"
-                "Los usuarios ya verán el botón de compra actualizado.",
-                parse_mode="Markdown",
-                reply_markup=get_panel_admin_markup()
-            )
-            
-    app.add_handler(CallbackQueryHandler(cb_guardar_pick_media, pattern="^guardar_pick_media$"))
+
 
     # Manejador general de texto y media (admin)
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND) & filters.User(user_id=ADMIN_ID), handle_admin_input))
@@ -1126,72 +987,8 @@ async def handle_stripe_event(event: dict, application: Application) -> None:
             logger.warning("[STRIPE] checkout.session.completed sin client_reference_id — ignorado")
             return
 
-        mode = obj.get("mode")
-        
-        if mode == "payment":
-            # --- FLUJO PICK PREMIUM (PAGO ÚNICO) ---
-            logger.info(f"[STRIPE] Pago único completado: user={user_id}")
-            import json
-            media_json = db.get_config("active_pick_premium_media", "[]")
-            file_ids = []
-            try:
-                file_ids = json.loads(media_json)
-            except Exception:
-                pass
-            
-            if file_ids:
-                try:
-                    # Enviar pick al usuario (fotos)
-                    enviados = []
-                    caption = "🔥 *Tu Pick Premium*\n\n_Este mensaje se autodestruirá en 24 horas._"
-                    
-                    if len(file_ids) == 1:
-                        m = await bot.send_photo(chat_id=user_id, photo=file_ids[0], caption=caption, parse_mode="Markdown")
-                        enviados.append(m)
-                    else:
-                        from telegram import InputMediaPhoto
-                        media_group = [InputMediaPhoto(f) for f in file_ids]
-                        media_group[0].caption = caption
-                        media_group[0].parse_mode = "Markdown"
-                        msgs = await bot.send_media_group(chat_id=user_id, media=media_group)
-                        enviados.extend(msgs)
-                        
-                    # Programar borrado a las 24h
-                    import time
-                    segundos_24h = 86400
-                    borrar_en = int(time.time()) + segundos_24h
-                    
-                    for m in enviados:
-                        db.guardar_borrado_pendiente(user_id, m.message_id, borrar_en)
-                        application.job_queue.run_once(
-                            delete_message_job,
-                            segundos_24h,
-                            data={"chat_id": user_id, "message_id": m.message_id}
-                        )
-                except Exception as e:
-                    logger.error(f"[STRIPE] Error enviando Pick Premium a user {user_id}: {e}")
-                    await bot.send_message(
-                        chat_id=ADMIN_ID,
-                        text=f"⚠️ *Fallo enviando Pick Premium*\nUser: `{user_id}`\nError: `{e}`",
-                        parse_mode="Markdown"
-                    )
-            else:
-                # No hay pick configurado
-                try:
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text="✅ Tu pago fue confirmado. En breve recibirás tu análisis premium por este chat."
-                    )
-                    await bot.send_message(
-                        chat_id=ADMIN_ID,
-                        text=f"⚠️ *Pago Premium Recibido pero sin Pick Activo*\nUser ID: `{user_id}` acaba de pagar pero no hay ningún pick configurado. ¡Envíalo manualmente!",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    logger.error(f"[STRIPE] Error avisando de Pick Pendiente a user {user_id}: {e}")
-            return
-            
         # --- FLUJO VIP (SUBSCRIPTION) ---
+
         db.save_subscription(user_id, customer_id, subscription_id, "active")
         logger.info(f"[STRIPE] Suscripción guardada: user={user_id} customer={customer_id}")
 
